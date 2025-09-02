@@ -1,0 +1,37 @@
+{
+ "charts": [],
+ "content": "[{\"id\":\"cS2lbEXk4z\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Purpledove Payment</span>\",\"col\":12}},{\"id\":\"7EQJXPLO93\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Virtual Wallet\",\"col\":3}}]",
+ "creation": "2025-08-28 07:24:47.036533",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "money-coins-1",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Purpledove Payment",
+ "links": [],
+ "modified": "2025-08-28 11:22:30.783999",
+ "modified_by": "Administrator",
+ "module": "Purpledove Payment",
+ "name": "Purpledove Payment",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 23.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Virtual Wallet",
+   "link_to": "Virtual Wallet",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "Purpledove Payment"
+}

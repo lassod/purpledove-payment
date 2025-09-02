@@ -1,0 +1,110 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-08-29 07:56:37.678239",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "destination_bank",
+  "destination_bank_code",
+  "narration",
+  "source_account_number",
+  "column_break_vqx2k",
+  "amount",
+  "destination_account_number",
+  "destination_account_name",
+  "transaction_reference",
+  "section_break_j1dqq",
+  "reference_document"
+ ],
+ "fields": [
+  {
+   "fieldname": "destination_bank",
+   "fieldtype": "Link",
+   "label": "Destination Bank",
+   "options": "BanksB"
+  },
+  {
+   "fieldname": "destination_bank_code",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Destination Bank Code"
+  },
+  {
+   "fieldname": "narration",
+   "fieldtype": "Text",
+   "label": "Narration"
+  },
+  {
+   "fieldname": "source_account_number",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Source Account Number"
+  },
+  {
+   "fieldname": "column_break_vqx2k",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Float",
+   "label": "Amount"
+  },
+  {
+   "fieldname": "destination_account_number",
+   "fieldtype": "Data",
+   "label": "Destination Account Number"
+  },
+  {
+   "fieldname": "destination_account_name",
+   "fieldtype": "Data",
+   "ignore_user_permissions": 1,
+   "label": "Destination Account Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "transaction_reference",
+   "fieldtype": "Data",
+   "label": "Transaction Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_document",
+   "fieldtype": "Data",
+   "label": "Reference Document"
+  },
+  {
+   "fieldname": "section_break_j1dqq",
+   "fieldtype": "Section Break"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-09-01 10:18:34.179321",
+ "modified_by": "Administrator",
+ "module": "Purpledove Payment",
+ "name": "Virtual Payment",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1,
+ "track_views": 1
+}

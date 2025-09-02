@@ -1,0 +1,142 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-02 19:30:00.000000",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "transaction_reference",
+  "virtual_payment",
+  "column_break_1",
+  "status",
+  "transaction_date",
+  "section_break_2",
+  "amount",
+  "destination_bank",
+  "destination_account_number",
+  "column_break_3",
+  "destination_account_name",
+  "source_account_number",
+  "narration",
+  "section_break_4",
+  "api_response"
+ ],
+ "fields": [
+  {
+   "fieldname": "transaction_reference",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Transaction Reference",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "virtual_payment",
+   "fieldtype": "Link",
+   "label": "Virtual Payment",
+   "options": "Virtual Payment"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nProcessing\nSuccessful\nFailed\nCancelled"
+  },
+  {
+   "fieldname": "transaction_date",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Transaction Date"
+  },
+  {
+   "fieldname": "section_break_2",
+   "fieldtype": "Section Break",
+   "label": "Transaction Details"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "precision": "2"
+  },
+  {
+   "fieldname": "destination_bank",
+   "fieldtype": "Data",
+   "label": "Destination Bank"
+  },
+  {
+   "fieldname": "destination_account_number",
+   "fieldtype": "Data",
+   "label": "Destination Account Number"
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "destination_account_name",
+   "fieldtype": "Data",
+   "label": "Destination Account Name"
+  },
+  {
+   "fieldname": "source_account_number",
+   "fieldtype": "Data",
+   "label": "Source Account Number"
+  },
+  {
+   "fieldname": "narration",
+   "fieldtype": "Text",
+   "label": "Narration"
+  },
+  {
+   "fieldname": "section_break_4",
+   "fieldtype": "Section Break",
+   "label": "API Response"
+  },
+  {
+   "fieldname": "api_response",
+   "fieldtype": "Long Text",
+   "label": "API Response"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-09-02 19:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Purpledove Payment",
+ "name": "Transaction History",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "All"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "transaction_reference",
+ "track_changes": 1,
+ "track_seen": 1,
+ "track_views": 1
+}

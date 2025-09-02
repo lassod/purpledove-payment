@@ -1,0 +1,180 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{wallet_name}",
+ "creation": "2025-08-28 07:26:08.400587",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "user_info_tab",
+  "wallet_name",
+  "column_break_qrmbg",
+  "currency",
+  "section_break_fxty9",
+  "wallet_id",
+  "balance",
+  "description",
+  "column_break_ixfkr",
+  "role",
+  "bvn",
+  "account_info_tab",
+  "account_number",
+  "account_type",
+  "column_break_j9enb",
+  "bank_name",
+  "bank_code",
+  "section_break_lsilf",
+  "exchange_ref",
+  "section_break_yssyf",
+  "business_id",
+  "site_name"
+ ],
+ "fields": [
+  {
+   "fieldname": "user_info_tab",
+   "fieldtype": "Tab Break",
+   "label": "User Info"
+  },
+  {
+   "fieldname": "wallet_name",
+   "fieldtype": "Data",
+   "label": "Wallet Name"
+  },
+  {
+   "fieldname": "column_break_qrmbg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "label": "Currency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_fxty9",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "wallet_id",
+   "fieldtype": "Data",
+   "label": "Wallet ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Data",
+   "label": "Description"
+  },
+  {
+   "fieldname": "column_break_ixfkr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bvn",
+   "fieldtype": "Data",
+   "label": "BVN",
+   "length": 11
+  },
+  {
+   "fieldname": "account_info_tab",
+   "fieldtype": "Tab Break",
+   "label": "Account Info"
+  },
+  {
+   "fieldname": "account_number",
+   "fieldtype": "Data",
+   "label": "Account Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "account_type",
+   "fieldtype": "Data",
+   "label": "Account Type",
+   "options": "static",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_j9enb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bank_name",
+   "fieldtype": "Data",
+   "label": "Bank Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "bank_code",
+   "fieldtype": "Data",
+   "label": "Bank Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_lsilf",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "exchange_ref",
+   "fieldtype": "Data",
+   "label": "Exchange Ref",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_yssyf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "business_id",
+   "fieldtype": "Data",
+   "label": "Business ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "label": "Site Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Link",
+   "label": "Role",
+   "options": "Role"
+  },
+  {
+   "fieldname": "balance",
+   "fieldtype": "Float",
+   "label": "Balance"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-09-01 10:17:41.927424",
+ "modified_by": "Administrator",
+ "module": "Purpledove Payment",
+ "name": "Virtual Wallet",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1,
+ "track_views": 1
+}

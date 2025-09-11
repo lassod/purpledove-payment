@@ -1,6 +1,6 @@
 # Purpledove Payment
 
-A payment platform 
+A payment platform
 
 #### License
 

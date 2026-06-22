@@ -61,14 +61,94 @@ class VirtualWallet(Document):
         
         return errors
 
+    def get_base_url(self):
+        """Resolve the BuyPower MFB base URL (configurable per-site)."""
+        base = (
+            frappe.conf.get("buypower_base_url")
+            or os.getenv("BP_BASE")
+            or "https://api.buypowermfb.net"
+        )
+        return base.rstrip("/")
+
+    @frappe.whitelist()
+    def fetch_remote_balance(self, update=True):
+        """
+        Fetch the live balance for this reserved account from BuyPower MFB
+        (GET /v2/accounts/reserved/{reference}/balance) and optionally sync
+        the local `balance` field.
+
+        Returns:
+            dict: {"success": bool, "balance": float, "error": str}
+        """
+        reference = self.exchange_ref or self.wallet_id
+        if not reference:
+            return {"success": False, "error": "Wallet has no merchant reference for balance lookup"}
+
+        bearer_token = self.get_bearer_token()
+        if not bearer_token:
+            return {"success": False, "error": "Bearer token not found"}
+
+        url = f"{self.get_base_url()}/v2/accounts/reserved/{reference}/balance"
+        headers = {
+            "Authorization": f"Bearer {bearer_token}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            if response.status_code != 200:
+                self.safe_log_error(
+                    f"Balance fetch failed ({response.status_code}): {response.text[:150]}",
+                    "Balance Fetch Error",
+                )
+                return {"success": False, "error": f"Balance fetch failed ({response.status_code})"}
+
+            data = response.json().get("data", {}) or {}
+
+            # Balance may be returned as a nested {value, currency} object or a
+            # flat numeric field depending on environment.
+            bal = data.get("balance")
+            if isinstance(bal, dict):
+                value = bal.get("value")
+            elif bal is not None:
+                value = bal
+            else:
+                value = (
+                    data.get("availableBalance")
+                    or data.get("available")
+                    or data.get("ledgerBalance")
+                    or 0
+                )
+
+            from frappe.utils import flt
+            balance = flt(value)
+
+            if update:
+                self.db_set("balance", balance, commit=True)
+
+            return {"success": True, "balance": balance}
+
+        except requests.RequestException as e:
+            self.safe_log_error(f"Balance request error: {str(e)[:100]}", "Balance Req Error")
+            return {"success": False, "error": "Network error fetching balance"}
+
     def get_bearer_token(self):
         """Get bearer token using os library"""
         try:
+            # Method 0: BuyPower MFB token (env or site config) takes priority
+            bearer_token = (
+                os.getenv('BUYPOWER_TOKEN')
+                or os.getenv('BP_TOKEN')
+                or frappe.conf.get('buypower_token')
+            )
+            if bearer_token:
+                return bearer_token.strip()
+
             # Method 1: Use os.getenv() to get LIVE_TOKEN from environment
             bearer_token = os.getenv('LIVE_TOKEN')
             if bearer_token:
                 return bearer_token.strip()
-            
+
             # Method 2: Try os.environ.get() as fallback
             bearer_token = os.environ.get('LIVE_TOKEN')
             if bearer_token:
@@ -366,8 +446,8 @@ class VirtualWallet(Document):
             if not bearer_token:
                 return {"error": "Bearer token not found in configuration"}
 
-            # API details for creating the wallet
-            post_url = "https://api.core.payable.africa/api/banking/virtual/accounts/reserved"
+            # API details for creating the wallet (BuyPower MFB reserved account)
+            post_url = f"{self.get_base_url()}/v2/accounts/reserved"
             headers = {
                 "Authorization": f"Bearer {bearer_token}",
                 "Content-Type": "application/json",
@@ -385,16 +465,16 @@ class VirtualWallet(Document):
                 self.safe_log_error(error_msg, "BVN Val Error")
                 return {"error": "BVN must be exactly 11 digits"}
 
-            # Generate a unique reference with timestamp to ensure uniqueness
+            # Generate a unique merchant reference (also used for balance lookups)
             timestamp = now_datetime().strftime('%Y%m%d%H%M%S')
             unique_ref = f"REF-{random.randint(100000, 999999)}-{timestamp}"
 
             post_data = {
-                "exRef": unique_ref,
+                "reference": unique_ref,
                 "name": bank_name,
-                "bvn": bvn_clean,  # Use cleaned BVN
                 "description": f"Virtual wallet for {bank_name}",
-                "accountType": "static"
+                "type": "static",
+                "bvn": bvn_clean,  # Use cleaned BVN
             }
 
             # Log the request data for debugging (without sensitive info)
@@ -426,17 +506,19 @@ class VirtualWallet(Document):
                 except:
                     site_name = frappe.conf.get('site_name', 'unknown_site')
 
-                # Update current Virtual Wallet record with API response
+                # Update current Virtual Wallet record with BuyPower MFB response.
+                # The merchant `reference` is the key used for balance lookups,
+                # so we persist it in both wallet_id and exchange_ref.
+                merchant_ref = response_data.get("reference", unique_ref)
                 self.update({
-                    "wallet_name": response_data.get("name", self.wallet_name),
+                    "wallet_name": self.wallet_name,
                     "currency": response_data.get("currency", "NGN"),
-                    "wallet_id": response_data.get("id"),
-                    "description": response_data.get("description", self.description),
-                    "bvn": response_data.get("bvn", bvn_clean),  # Use cleaned BVN
+                    "wallet_id": merchant_ref,
+                    "description": self.description or f"Virtual wallet for {bank_name}",
+                    "bvn": bvn_clean,  # Use cleaned BVN (not returned by API)
                     "account_number": response_data.get("accountNumber"),
-                    "exchange_ref": response_data.get("exchangeRef"),
-                    "business_id": response_data.get("businessId"),
-                    "account_type": response_data.get("accountType", "static"),
+                    "exchange_ref": merchant_ref,
+                    "account_type": response_data.get("type", "static"),
                     "bank_code": response_data.get("bankCode"),
                     "bank_name": response_data.get("bankName"),
                     "site_name": site_name

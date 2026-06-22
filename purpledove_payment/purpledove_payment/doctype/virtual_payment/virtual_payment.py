@@ -21,26 +21,46 @@ except ImportError:
 class VirtualPayment(Document):
     """Virtual Payment document for processing bank transfers"""
     
-    # API Configuration
-    API_BASE_URL = "https://api.core.payable.africa/api/banking"
-    DEFAULT_WALLET_ACCOUNT = "9000136910"
+    # API Configuration (BuyPower MFB)
+    # Override per-site in site_config.json via "buypower_base_url" if you
+    # need to point at a different environment.
+    DEFAULT_BASE_URL = "https://api.buypowermfb.net"
     REQUEST_TIMEOUT = 30
     MAX_RETRIES = 3
     RETRY_DELAYS = [2, 5, 10]
-    
+
     def __init__(self, *args, **kwargs):
         """Initialize the VirtualPayment document"""
         super().__init__(*args, **kwargs)
+
+    def _get_base_url(self):
+        """Resolve the BuyPower MFB base URL (configurable per-site)."""
+        base = (
+            frappe.conf.get("buypower_base_url")
+            or os.environ.get("BP_BASE")
+            or self.DEFAULT_BASE_URL
+        )
+        return base.rstrip("/")
+
+    def _generate_reference(self):
+        """Generate an idempotency reference for a transfer."""
+        import random
+        from frappe.utils import now_datetime
+        ts = now_datetime().strftime("%Y%m%d%H%M%S")
+        suffix = (self.name or "VP").replace(" ", "")
+        return f"PDP-{suffix}-{ts}-{random.randint(1000, 9999)}"
     
     def _get_bearer_token(self):
         """Get bearer token from environment variables"""
-        # Try multiple ways to get the token
-        token = os.environ.get('LIVE_TOKEN') or os.environ.get('PAYABLE_LIVE_TOKEN')
-        
-        if not token:
-            # Fallback to None if no token found - will trigger error
-            token = None
-        
+        # Try multiple ways to get the token (BuyPower MFB first, legacy last)
+        token = (
+            os.environ.get('BUYPOWER_TOKEN')
+            or os.environ.get('BP_TOKEN')
+            or frappe.conf.get('buypower_token')
+            or os.environ.get('LIVE_TOKEN')
+            or os.environ.get('PAYABLE_LIVE_TOKEN')
+        )
+
         if not token:
             # Try with getattr on frappe.conf (Frappe's config)
             token = getattr(frappe.conf, 'live_token', None)
@@ -141,8 +161,8 @@ class VirtualPayment(Document):
             }
     
     def _verify_bank_account(self, bearer_token, bank_code, account_number, doc):
-        """Make bank verification API request"""
-        url = f"{self.API_BASE_URL}/core/bank/resolve"
+        """Make bank verification API request (BuyPower MFB name enquiry)"""
+        url = f"{self._get_base_url()}/v2/banking/accounts/resolve"
         headers = {
             "Authorization": f"Bearer {bearer_token}",
             "Content-Type": "application/json",
@@ -276,16 +296,26 @@ class VirtualPayment(Document):
             )
             
             # Step 7: Create transaction history record
-            transaction_ref = payment_result["response_data"].get("transactionReference")
+            # BuyPower MFB returns "reference" (fallback to legacy key).
+            transaction_ref = (
+                payment_result["response_data"].get("reference")
+                or payment_result["response_data"].get("transactionReference")
+            )
             if transaction_ref:
                 # Save transaction reference to document
                 doc = frappe.get_doc(self.doctype, self.name)
                 doc.db_set('transaction_reference', transaction_ref, commit=True)
-                
+
+                # The BuyPower transfer response does not echo the source, so
+                # record the paying wallet's account number ourselves. This is
+                # what the webhook uses to reverse balance on a failed transfer.
+                response_data = payment_result["response_data"]
+                response_data.setdefault("source", {})["accountNumber"] = account_number
+
                 # Create transaction history record
                 from purpledove_payment.purpledove_payment.doctype.transaction_history.transaction_history import TransactionHistory
                 TransactionHistory.create_transaction_record(
-                    payment_result["response_data"], 
+                    response_data,
                     self.name
                 )
             
@@ -326,7 +356,15 @@ class VirtualPayment(Document):
                     "success": False,
                     "error": f"Virtual wallet {wallet_name} not found"
                 }
-            
+
+            # Best-effort: refresh the live balance from BuyPower MFB before
+            # validating. Falls back to the stored balance if the API is down.
+            try:
+                wallet_doc.fetch_remote_balance(update=True)
+                wallet_doc.reload()
+            except Exception as e:
+                frappe.logger().warning(f"Live balance refresh failed, using stored balance: {e}")
+
             # Get virtual wallet balance from the balance field
             current_balance = flt(wallet_doc.balance or 0.0)
                 
@@ -351,8 +389,18 @@ class VirtualPayment(Document):
                     )
                 }
             
-            account_number = wallet_doc.account_number or self.DEFAULT_WALLET_ACCOUNT
-            
+            # Payment must be debited from the wallet's own reserved account,
+            # not from a shared collection/settlement account.
+            account_number = wallet_doc.account_number
+            if not account_number:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Virtual wallet {wallet_name} has no account number. "
+                        f"Cannot process payment from this wallet."
+                    )
+                }
+
             return {
                 "success": True,
                 "current_balance": current_balance,
@@ -406,17 +454,46 @@ class VirtualPayment(Document):
                 frappe.log_error(f"Could not get bank code for '{self.destination_bank}': {str(e)}", "Bank Code Error")
                 frappe.logger().error(f"Bank code retrieval failed: {str(e)}")
         
-        # Get source account number - use from field or default
-        source_account = self.source_account_number or "9000136910"
+        # Source account must be the paying wallet's own reserved account.
+        # `account_number` is resolved from the selected Virtual Wallet in
+        # validate_balance_for_wallet(). Never fall back to a shared
+        # collection/settlement account.
+        source_account = account_number or self.source_account_number
+        if not source_account:
+            return {
+                "success": False,
+                "error": "Source wallet account number not found. Cannot process payment."
+            }
         
+        # BuyPower MFB transfer payload. source.type = "wallet" debits the
+        # paying wallet's own reserved account (not a shared collection account).
+        reference = self.transaction_reference or self._generate_reference()
+        narration = (str(self.narration) if self.narration else "Payment Transfer")[:50]
+
         post_data = {
-            "destinationBankCode": str(destination_bank_code) if destination_bank_code else "",
-            "destinationAccountNumber": str(self.destination_account_number) if self.destination_account_number else "",
-            "amount": float(self.amount) if self.amount else 0.0,
-            "sourceAccountNumber": str(source_account),
-            "narration": str(self.narration) if self.narration else "Payment Transfer"
+            "source": {
+                "type": "wallet",
+                "accountNumber": str(source_account),
+            },
+            "destination": {
+                "bankCode": str(destination_bank_code) if destination_bank_code else "",
+                "accountNumber": str(self.destination_account_number) if self.destination_account_number else "",
+            },
+            "amount": {
+                "value": float(self.amount) if self.amount else 0.0,
+                "currency": "NGN",
+            },
+            "narration": narration,
+            "reference": reference,
+            # Stamp the originating site so the central admin webhook can route
+            # transfer.* events back to the correct site.
+            "metadata": {
+                "site": getattr(frappe.local, "site", "") or "",
+                "source_account_number": str(source_account),
+                "virtual_payment": self.name,
+            },
         }
-        
+
         # Validate request data and log any issues
         validation_errors = []
         if not destination_bank_code:
@@ -434,24 +511,14 @@ class VirtualPayment(Document):
             frappe.logger().error(error_msg)
             return {"success": False, "error": error_msg}
         
-        url = "https://api.core.payable.africa/api/banking/virtual/transfers"
+        url = f"{self._get_base_url()}/v2/transfers"
         
         # Enhanced logging for debugging 502 errors
         frappe.logger().info("=== PAYMENT REQUEST DEBUG INFO ===")
         frappe.logger().info(f"URL: {url}")
-        frappe.logger().info(f"Bearer Token: {bearer_token}")
-        frappe.logger().info(f"Headers: {headers}")
+        frappe.logger().info("Bearer token present: yes")
         frappe.logger().info(f"Request payload: {json.dumps(post_data, indent=2)}")
         
-        # Log exactly what Postman shows
-        postman_equivalent = {
-            "destinationBankCode": "100004",
-            "destinationAccountNumber": "8169246969", 
-            "amount": 100,
-            "sourceAccountNumber": "9000136910",
-            "narration": "[[randomLoremSentence]]"
-        }
-        frappe.logger().info(f"Postman equivalent would be: {json.dumps(postman_equivalent, indent=2)}")
         frappe.logger().info("=== END DEBUG INFO ===")
         
         # Validate that all required fields have valid values
@@ -513,11 +580,20 @@ class VirtualPayment(Document):
     
     def _handle_payment_response(self, response, attempt):
         """Handle payment API response"""
-        if response.status_code == 200:
+        if response.status_code in (200, 201):
             try:
                 response_json = response.json()
                 response_data = response_json.get("data", response_json)
-                frappe.logger().info(f"Payment successful: {response_json}")
+                # BuyPower transfer status: pending | paid | failed.
+                # pending/paid are both accepted (async finalization via webhook).
+                tx_status = str(response_data.get("status", "")).lower()
+                if tx_status == "failed":
+                    msg = response_json.get("message") or "Transfer failed"
+                    frappe.log_error(f"Transfer failed: {response.text}", "Payment Failed")
+                    return {"success": False, "error": msg, "response_data": response_data}
+                frappe.logger().info(
+                    f"Transfer accepted: ref={response_data.get('reference')} status={tx_status}"
+                )
                 return {"success": True, "response_data": response_data}
             except json.JSONDecodeError as e:
                 frappe.log_error(f"Invalid JSON in successful response: {response.text}", "Payment JSON Error")
@@ -713,11 +789,11 @@ class VirtualPayment(Document):
     @frappe.whitelist(allow_guest=True, xss_safe=True)
     def check_transaction_status_api(self, transaction_reference):
         """
-        Check transaction status using Payable Africa API
-        
+        Check transaction status using BuyPower MFB API
+
         Args:
             transaction_reference: Transaction reference to check
-            
+
         Returns:
             dict: Transaction status information
         """
@@ -727,7 +803,7 @@ class VirtualPayment(Document):
                     "success": False,
                     "error": "Transaction reference is required"
                 }
-            
+
             # Get bearer token
             bearer_token = self._get_bearer_token()
             if not bearer_token:
@@ -735,23 +811,19 @@ class VirtualPayment(Document):
                     "success": False,
                     "error": "Bearer token not found"
                 }
-            
-            # API endpoint for checking transaction status
-            url = f"{self.API_BASE_URL}/virtual/transfers/status"
-            
+
+            # BuyPower MFB: GET /v2/transactions/{reference}
+            url = f"{self._get_base_url()}/v2/transactions/{transaction_reference}"
+
             headers = {
                 "Authorization": f"Bearer {bearer_token}",
                 "Content-Type": "application/json",
             }
-            
-            params = {
-                "transactionReference": transaction_reference
-            }
-            
+
             frappe.logger().info(f"Checking transaction status for: {transaction_reference}")
-            
+
             try:
-                response = requests.get(url, headers=headers, params=params)
+                response = requests.get(url, headers=headers)
                 
                 frappe.logger().info(f"Status check response: {response.status_code}")
                 frappe.logger().info(f"Status check content: {response.text}")
@@ -766,9 +838,10 @@ class VirtualPayment(Document):
                         
                         # Map API status to our status options
                         status_mapping = {
+                            'PAID': 'Successful',
                             'SUCCESSFUL': 'Successful',
                             'SUCCESS': 'Successful',
-                            'PENDING': 'Pending', 
+                            'PENDING': 'Pending',
                             'PROCESSING': 'Processing',
                             'FAILED': 'Failed',
                             'CANCELLED': 'Cancelled'

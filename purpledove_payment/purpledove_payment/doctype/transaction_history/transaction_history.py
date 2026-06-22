@@ -31,26 +31,47 @@ class TransactionHistory(Document):
             TransactionHistory: Created transaction record
         """
         try:
+            # Normalize BuyPower MFB response (nested) with legacy fallbacks.
+            destination = transaction_data.get("destination", {}) or {}
+            amount_obj = transaction_data.get("amount", {})
+            amount_val = amount_obj.get("value", 0) if isinstance(amount_obj, dict) else (amount_obj or 0)
+            source = transaction_data.get("source", {}) or {}
+
+            tx_ref = (
+                transaction_data.get("reference")
+                or transaction_data.get("transactionReference")
+            )
+
             # Check if record already exists
             existing = frappe.db.exists("Transaction History", {
-                "transaction_reference": transaction_data.get("transactionReference")
+                "transaction_reference": tx_ref
             })
-            
+
             if existing:
                 return frappe.get_doc("Transaction History", existing)
-            
+
+            # Map BuyPower transfer status -> Transaction History status
+            status_map = {
+                "paid": "Successful",
+                "pending": "Pending",
+                "processing": "Processing",
+                "failed": "Failed",
+                "cancelled": "Cancelled",
+            }
+            mapped_status = status_map.get(str(transaction_data.get("status", "")).lower(), "Pending")
+
             # Create new record
             transaction = frappe.get_doc({
                 "doctype": "Transaction History",
-                "transaction_reference": transaction_data.get("transactionReference"),
+                "transaction_reference": tx_ref,
                 "virtual_payment": virtual_payment_name,
-                "status": "Pending",  # Default status
+                "status": mapped_status,
                 "transaction_date": frappe.utils.now(),
-                "amount": transaction_data.get("amount", 0),
-                "destination_bank": transaction_data.get("destinationBankName", ""),
-                "destination_account_number": transaction_data.get("destinationAccountNumber", ""),
-                "destination_account_name": transaction_data.get("destinationAccountName", ""),
-                "source_account_number": transaction_data.get("sourceAccountNumber", ""),
+                "amount": amount_val,
+                "destination_bank": destination.get("bankName") or transaction_data.get("destinationBankName", ""),
+                "destination_account_number": destination.get("accountNumber") or transaction_data.get("destinationAccountNumber", ""),
+                "destination_account_name": destination.get("accountName") or transaction_data.get("destinationAccountName", ""),
+                "source_account_number": source.get("accountNumber") or transaction_data.get("sourceAccountNumber", ""),
                 "narration": transaction_data.get("narration", ""),
                 "api_response": frappe.as_json(transaction_data)
             })

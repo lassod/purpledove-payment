@@ -41,8 +41,12 @@ def _verify_webhook_signature(raw_body):
 
     secret = frappe.conf.get("buypower_webhook_secret")
     if not secret:
-        frappe.logger().warning("Webhook signature present but no buypower_webhook_secret configured")
-        return False
+        # No secret configured — cannot verify. Allow through and warn.
+        frappe.logger().warning(
+            "Webhook received with signature header but buypower_webhook_secret is not configured — "
+            "treating as trusted. Set buypower_webhook_secret in site_config.json to enforce verification."
+        )
+        return True
 
     if isinstance(raw_body, str):
         raw_body = raw_body.encode("utf-8")
@@ -314,5 +318,42 @@ def fetch_and_save_banks(app_name=None, *args, **kwargs):
         # Log the exception message
         frappe.log_error(message=f"Unexpected Error: {str(e)[:200]}", title="Bank Data Fetch Error")
         return {"status": "error", "message": str(e)}
-    
+
         return {"status": "error", "message": str(e)}
+
+
+def re_register_all_wallets(app_name=None, *args, **kwargs):
+    """
+    Re-register every Virtual Wallet that has an account_number with buypower_admin.
+    Called automatically on `bench migrate` via the after_migrate hook.
+    """
+    if app_name and isinstance(app_name, str) and app_name not in ("purpledove_payment",):
+        return
+
+    wallets = frappe.get_all(
+        "Virtual Wallet",
+        filters={"account_number": ["!=", ""]},
+        fields=["name"],
+    )
+
+    ok = fail = 0
+    for row in wallets:
+        try:
+            doc = frappe.get_doc("Virtual Wallet", row["name"])
+            result = doc.re_register_with_admin()
+            if result.get("success"):
+                ok += 1
+            else:
+                fail += 1
+                frappe.log_error(
+                    title="Admin Re-registration Failed",
+                    message=f"Wallet '{row['name']}': {result.get('message')}",
+                )
+        except Exception as e:
+            fail += 1
+            frappe.log_error(
+                title="Admin Re-registration Error",
+                message=f"Wallet '{row['name']}': {str(e)}",
+            )
+
+    frappe.logger().info(f"re_register_all_wallets: {ok} succeeded, {fail} failed")

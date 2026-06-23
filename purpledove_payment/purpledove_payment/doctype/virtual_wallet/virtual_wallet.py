@@ -428,6 +428,26 @@ class VirtualWallet(Document):
             return {"success": False, "message": error_msg}
 
     @frappe.whitelist()
+    def re_register_with_admin(self):
+        """Re-register this wallet with buypower_admin (e.g. for wallets created before admin sync existed)."""
+        if not self.account_number:
+            return {"success": False, "message": "No account_number on this wallet — cannot re-register"}
+        wallet_data = {
+            "name": self.wallet_name,
+            "accountNumber": self.account_number,
+            "exchangeRef": self.exchange_ref or self.wallet_id or "",
+            "currency": self.currency or "NGN",
+            "description": self.description or "",
+            "bvn": self.bvn or "",
+            "accountType": self.account_type or "static",
+            "bankCode": self.bank_code or "",
+            "bankName": self.bank_name or "",
+            "businessId": "",
+            "id": self.wallet_id or "",
+        }
+        return self.register_with_admin_system(wallet_data)
+
+    @frappe.whitelist()
     def create_wallet(self):
         """
         Create a virtual wallet and register it with the client wallet system

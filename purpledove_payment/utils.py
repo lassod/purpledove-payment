@@ -208,6 +208,25 @@ def wallet_log():
         return {"success": False, "error": str(e)}
 
 
+def _seed_required_banks():
+    """Ensure critical banks that may be missing from the API response are present."""
+    required = [
+        {"bank_name": "BuyPower Microfinance Bank", "bank_code": "090682", "new": 0},
+    ]
+    for bank in required:
+        if not frappe.db.exists("BanksB", {"bank_code": bank["bank_code"]}):
+            try:
+                frappe.get_doc({"doctype": "BanksB", **bank}).insert(
+                    ignore_permissions=True,
+                    ignore_links=True,
+                    ignore_if_duplicate=True,
+                    ignore_mandatory=True,
+                )
+                frappe.db.commit()
+            except Exception as e:
+                frappe.log_error(title="Bank Seed Error", message=str(e))
+
+
 @frappe.whitelist(allow_guest=True, xss_safe=True)
 def fetch_and_save_banks(app_name=None, *args, **kwargs):
     # `after_app_install` passes the installed app's name as the first
@@ -216,6 +235,8 @@ def fetch_and_save_banks(app_name=None, *args, **kwargs):
     # skip so we only run for our own app.
     if app_name and isinstance(app_name, str) and app_name not in ("purpledove_payment",):
         return {"status": "skipped", "message": f"Not triggered for purpledove_payment (got '{app_name}')"}
+
+    _seed_required_banks()
 
     try:
         # Look for a .env beside the bench root (cwd) and inside the sites dir.

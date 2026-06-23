@@ -68,7 +68,7 @@ def _handle_inflow(event, data):
         return {"success": True, "message": "No matching wallet"}
 
     wallet_doc = frappe.get_doc("Virtual Wallet", wallet_name)
-    new_balance = flt(wallet_doc.balance or 0) + amount
+    new_balance = flt(flt(wallet_doc.balance or 0) + amount, 2)
     wallet_doc.db_set("balance", new_balance, commit=True)
     return {"success": True, "message": "Wallet credited", "balance": new_balance}
 

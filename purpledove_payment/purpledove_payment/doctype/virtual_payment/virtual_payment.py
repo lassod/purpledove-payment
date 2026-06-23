@@ -706,8 +706,23 @@ class VirtualPayment(Document):
             
             # Get the virtual wallet document
             wallet_doc = frappe.get_doc("Virtual Wallet", wallet_name)
-            current_balance = flt(wallet_doc.balance or 0.0)
-            
+
+            # Pull live balance from BuyPower API and persist it so inflows
+            # are visible even when webhooks haven't fired yet.
+            try:
+                result = wallet_doc.fetch_remote_balance(update=True)
+                if not result.get("success"):
+                    frappe.logger().warning(
+                        f"Remote balance fetch failed for {wallet_name}: {result.get('error')}"
+                    )
+            except Exception as fetch_err:
+                frappe.logger().warning(
+                    f"Could not fetch remote balance for {wallet_name}: {str(fetch_err)}"
+                )
+
+            wallet_doc.reload()
+            current_balance = flt(wallet_doc.balance or 0.0, 2)
+
             return {
                 "success": True,
                 "current_balance": current_balance,

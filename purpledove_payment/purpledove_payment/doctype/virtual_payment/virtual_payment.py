@@ -51,31 +51,45 @@ class VirtualPayment(Document):
         return f"PDP-{suffix}-{ts}-{random.randint(1000, 9999)}"
     
     def _get_bearer_token(self):
-        """Get bearer token from environment variables"""
-        # Try multiple ways to get the token (BuyPower MFB first, legacy last)
+        """Get bearer token — checks env vars, .env file, then frappe.conf."""
         token = (
             os.environ.get('BUYPOWER_TOKEN')
             or os.environ.get('BP_TOKEN')
             or frappe.conf.get('buypower_token')
             or os.environ.get('LIVE_TOKEN')
             or os.environ.get('PAYABLE_LIVE_TOKEN')
+            or getattr(frappe.conf, 'live_token', None)
+            or frappe.conf.get('LIVE_TOKEN')
+            or frappe.conf.get('TOKEN')
         )
+        if token:
+            return token.strip()
 
-        if not token:
-            # Try with getattr on frappe.conf (Frappe's config)
-            token = getattr(frappe.conf, 'live_token', None)
-        
-        if not token:
-            # Check if it's in Frappe's site config
-            token = frappe.db.get_single_value("System Settings", "live_token") if frappe.db else None
-        
-        if not token:
-            frappe.log_error(message="LIVE_TOKEN not found in environment variables, frappe.conf, or System Settings", title="Token Configuration Error")
-            frappe.logger().error("Available environment variables: " + str(list(os.environ.keys())))
-            return None
-        
-        frappe.logger().info(f"Successfully retrieved LIVE_TOKEN: {'*' * (len(str(token)) - 10) + str(token)[-10:]}")
-        return token
+        # .env file fallback — same paths as virtual_wallet
+        try:
+            possible_paths = [
+                os.path.join(os.getcwd(), 'sites', '.env'),
+                os.path.join(os.path.dirname(os.getcwd()), 'sites', '.env'),
+                os.path.join(os.getcwd(), '.env'),
+                os.path.join(os.path.dirname(os.getcwd()), '.env'),
+            ]
+            for path in possible_paths:
+                if os.path.exists(path):
+                    with open(path, 'r') as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith('#') and '=' in line:
+                                k, v = line.split('=', 1)
+                                os.environ[k.strip()] = v.strip().strip('"\'')
+                    token = os.environ.get('BUYPOWER_TOKEN') or os.environ.get('BP_TOKEN') or os.environ.get('LIVE_TOKEN')
+                    if token:
+                        return token.strip()
+                    break
+        except Exception as e:
+            frappe.log_error(message=str(e), title="VirtualPayment .env load error")
+
+        frappe.log_error(message="Bearer token not found in env vars or .env file", title="Token Configuration Error")
+        return None
     
     def _get_bank_code(self, bank_name):
         """

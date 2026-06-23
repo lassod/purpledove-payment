@@ -433,13 +433,12 @@ class VirtualPayment(Document):
     def _update_specific_wallet_balance(self, wallet_doc, current_balance, payment_amount):
         """Update balance for a specific virtual wallet after successful payment"""
         try:
-            new_balance = current_balance - payment_amount
-            wallet_doc.balance = new_balance
-            wallet_doc.save(ignore_permissions=True)
-            
+            new_balance = flt(current_balance - payment_amount, 2)
+            wallet_doc.db_set("balance", new_balance, commit=True)
+
             frappe.logger().info(f"Virtual wallet balance updated: {current_balance} -> {new_balance}")
             return new_balance
-            
+
         except Exception as e:
             frappe.log_error(message=f"Error updating wallet balance: {str(e)}", title="Wallet Balance Update Error")
             raise Exception(f"Payment processed but failed to update wallet balance: {str(e)}")

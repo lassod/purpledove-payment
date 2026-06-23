@@ -3,11 +3,20 @@ import hmac
 import hashlib
 import requests
 import frappe
-from dotenv import load_dotenv
 import os
 import subprocess
 from frappe import _
 from frappe.utils import flt
+
+# python-dotenv is an optional convenience for loading a local .env file.
+# Never let its absence break this module (webhook receiver + bank fetch):
+# fall back to a no-op so credentials can still be read from frappe.conf /
+# already-exported environment variables.
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
 
 
 def _verify_webhook_signature(raw_body):
@@ -44,6 +53,7 @@ def _verify_webhook_signature(raw_body):
 
 def _handle_inflow(event, data):
     """Credit a Virtual Wallet when its reserved account receives an inflow."""
+    # BuyPower MFB amounts are in naira.
     amount_obj = data.get("amount", {})
     amount = flt(amount_obj.get("value")) if isinstance(amount_obj, dict) else flt(amount_obj)
 
@@ -105,6 +115,54 @@ def _handle_transfer_update(event, data):
     return {"success": True, "message": f"Transfer {status} processed"}
 
 
+def _record_payment_log(event, data, payload):
+    """
+    Persist a Purpledove Payment Log entry for the webhook event.
+
+    Defensive by design: any failure here MUST NOT break webhook processing,
+    so all errors are swallowed (and logged) rather than raised.
+    """
+    try:
+        source = data.get("source", {}) or {}
+        destination = data.get("destination", {}) or {}
+        amount_obj = data.get("amount", {})
+        amount = flt(amount_obj.get("value")) if isinstance(amount_obj, dict) else flt(amount_obj)
+        metadata = data.get("metadata", {}) or {}
+
+        is_inflow = event in ("static_account.transaction.created", "invoice.paid")
+        is_transfer = event in ("transfer.pending", "transfer.paid", "transfer.failed")
+        transaction_type = "INFLOW" if is_inflow else ("OUTFLOW" if is_transfer else None)
+
+        raw_status = (data.get("status") or (event.split(".")[-1] if event else "")).lower()
+        status_map = {"paid": "Successful", "successful": "Successful", "pending": "Pending", "failed": "Failed"}
+        status = status_map.get(raw_status, "Pending")
+
+        frappe.get_doc({
+            "doctype": "Purpledove Payment Log",
+            "event": event,
+            "transaction_reference": data.get("reference") or data.get("transactionReference"),
+            "session_id": data.get("sessionId"),
+            "account_number": destination.get("accountNumber") if is_inflow else (source.get("accountNumber") or data.get("accountNumber")),
+            "account_type": data.get("type") or data.get("accountType"),
+            "amount": amount,
+            "source_account_name": source.get("accountName") or data.get("sourceAccountName"),
+            "source_account_number": source.get("accountNumber") or data.get("sourceAccountNumber"),
+            "source_bank_name": source.get("bankName") or data.get("sourceBankName"),
+            "source_bank_code": source.get("bankCode") or data.get("sourceBankCode"),
+            "destination_account_number": destination.get("accountNumber") or data.get("destinationAccountNumber"),
+            "destination_account_name": destination.get("accountName") or data.get("destinationAccountName"),
+            "destination_bank_name": destination.get("bankName") or data.get("destinationBankName"),
+            "destination_bank_code": destination.get("bankCode") or data.get("destinationBankCode"),
+            "transaction_type": transaction_type,
+            "status": status,
+            "narration": data.get("narration"),
+            "metadata": json.dumps(metadata),
+            "data_details": json.dumps(payload),
+        }).insert(ignore_permissions=True)
+    except Exception as log_error:
+        frappe.log_error(title="Payment Log Insert Error", message=str(log_error))
+
+
 @frappe.whitelist(allow_guest=True)
 def wallet_log():
     """
@@ -127,6 +185,9 @@ def wallet_log():
         event = payload.get("type") or payload.get("event")
         data = payload.get("data", {}) or {}
 
+        # Keep an audit trail of every webhook on the client side.
+        _record_payment_log(event, data, payload)
+
         if event in ("static_account.transaction.created", "invoice.paid"):
             result = _handle_inflow(event, data)
         elif event in ("transfer.pending", "transfer.paid", "transfer.failed"):
@@ -144,24 +205,40 @@ def wallet_log():
 
 
 @frappe.whitelist(allow_guest=True, xss_safe=True)
-def fetch_and_save_banks(site_name=None):
+def fetch_and_save_banks(app_name=None, *args, **kwargs):
+    # `after_app_install` passes the installed app's name as the first
+    # positional argument; `after_migrate` passes nothing; manual calls pass
+    # nothing. Accept all of them. When triggered by another app's install,
+    # skip so we only run for our own app.
+    if app_name and isinstance(app_name, str) and app_name not in ("purpledove_payment",):
+        return {"status": "skipped", "message": f"Not triggered for purpledove_payment (got '{app_name}')"}
+
     try:
-        # Dynamically get the current working directory
-        current_path = subprocess.getoutput("pwd")
+        # Look for a .env beside the bench root (cwd) and inside the sites dir.
+        candidate_env_paths = [
+            os.path.join(os.getcwd(), ".env"),
+            os.path.join(os.getcwd(), "sites", ".env"),
+        ]
+        for env_path in candidate_env_paths:
+            if os.path.exists(env_path):
+                load_dotenv(dotenv_path=env_path)
+                break
 
-        # Load .env file from the current path
-        env_path = os.path.join(current_path, ".env")
-        load_dotenv(dotenv_path=env_path)
-
-        # Get the bearer token (BuyPower MFB first, legacy last)
+        # Get the bearer token. The default base URL is production, so prefer
+        # the live token over the sandbox TOKEN. Explicit overrides
+        # (BUYPOWER_TOKEN / BP_TOKEN / site config) still win.
         bearer_token = (
             os.getenv("BUYPOWER_TOKEN")
             or os.getenv("BP_TOKEN")
             or frappe.conf.get("buypower_token")
+            or os.getenv("LIVE_TOKEN")
             or os.getenv("TOKEN")
         )
+        # Values loaded from .env may carry surrounding quotes/whitespace.
+        if bearer_token:
+            bearer_token = bearer_token.strip().strip('"').strip("'").strip()
         if not bearer_token:
-            frappe.log_error("Bearer token not found", "Bank Data Fetch Error")
+            frappe.log_error(message="Bearer token not found", title="Bank Data Fetch Error")
             return {"status": "error", "message": "Bearer token not found"}
 
         # BuyPower MFB banks list
@@ -211,11 +288,11 @@ def fetch_and_save_banks(site_name=None):
                                 
                             except Exception as e:
                                 # Log error for any insertion failure
-                                frappe.log_error(f"Insert Error for {bank_name} ({bank_code}): {str(e)}", "Bank Data Save Error")
+                                frappe.log_error(message=f"Insert Error for {bank_name} ({bank_code}): {str(e)}", title="Bank Data Save Error")
                         else:
-                            frappe.log_error(f"Duplicate bank entry skipped: {bank_name} ({bank_code})", "Bank Data Duplicate")
+                            frappe.log_error(message=f"Duplicate bank entry skipped: {bank_name} ({bank_code})", title="Bank Data Duplicate")
                     else:
-                        frappe.log_error(f"Invalid bank data: {bank}", "Bank Data Validation Error")
+                        frappe.log_error(message=f"Invalid bank data: {bank}", title="Bank Data Validation Error")
 
                 # Return success response
                 return {
@@ -225,17 +302,17 @@ def fetch_and_save_banks(site_name=None):
                 }
 
             except Exception as e:
-                frappe.log_error(f"JSON Parsing Error: {str(e)}", "Bank Data Fetch Error")
+                frappe.log_error(message=f"JSON Parsing Error: {str(e)}", title="Bank Data Fetch Error")
                 return {"status": "error", "message": "Failed to parse API response"}
         else:
             # Log an error if the API call fails
             error_message = f"API call failed. Status Code: {response.status_code}, Response: {response.text[:200]}"
-            frappe.log_error(error_message, "Bank Data Fetch Error")
+            frappe.log_error(message=error_message, title="Bank Data Fetch Error")
             return {"status": "error", "message": "Failed to fetch data from API"}
 
     except Exception as e:
         # Log the exception message
-        frappe.log_error(f"Unexpected Error: {str(e)[:200]}", "Bank Data Fetch Error")
+        frappe.log_error(message=f"Unexpected Error: {str(e)[:200]}", title="Bank Data Fetch Error")
         return {"status": "error", "message": str(e)}
     
         return {"status": "error", "message": str(e)}

@@ -121,6 +121,7 @@ class VirtualWallet(Document):
                 )
 
             from frappe.utils import flt
+            # BuyPower MFB returns balances in naira.
             balance = flt(value)
 
             if update:
@@ -624,7 +625,7 @@ def verify_and_update_pin(wallet_name, current_pin, new_pin):
         return {"success": True, "message": "PIN updated successfully"}
         
     except Exception as e:
-        frappe.log_error(f"PIN update error: {str(e)}", "PIN Update Error")
+        frappe.log_error(message=f"PIN update error: {str(e)}", title="PIN Update Error")
         return {"success": False, "error": f"Error updating PIN: {str(e)}"}
 
 

@@ -1,0 +1,195 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2025-06-22 00:00:00.000000",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "event",
+  "transaction_id",
+  "transaction_reference",
+  "account_exchange_reference",
+  "column_break_zax05",
+  "session_id",
+  "account_number",
+  "account_type",
+  "amount",
+  "section_break_zseal",
+  "source_account_name",
+  "source_account_number",
+  "source_bank_name",
+  "source_bank_code",
+  "column_break_cwhqh",
+  "destination_account_number",
+  "destination_account_name",
+  "destination_bank_name",
+  "destination_bank_code",
+  "transaction_type",
+  "status",
+  "narration",
+  "created_at",
+  "updated_at",
+  "metadata",
+  "data_details"
+ ],
+ "fields": [
+  {
+   "fieldname": "event",
+   "fieldtype": "Data",
+   "label": "Event"
+  },
+  {
+   "fieldname": "transaction_id",
+   "fieldtype": "Int",
+   "label": "Transaction ID"
+  },
+  {
+   "fieldname": "transaction_reference",
+   "fieldtype": "Data",
+   "label": "Transaction Reference"
+  },
+  {
+   "fieldname": "account_exchange_reference",
+   "fieldtype": "Data",
+   "label": "Account Exchange Reference"
+  },
+  {
+   "fieldname": "column_break_zax05",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "label": "Session ID"
+  },
+  {
+   "fieldname": "account_number",
+   "fieldtype": "Data",
+   "label": "Account Number"
+  },
+  {
+   "fieldname": "account_type",
+   "fieldtype": "Data",
+   "label": "Account Type"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Float",
+   "label": "Amount"
+  },
+  {
+   "fieldname": "section_break_zseal",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "source_account_name",
+   "fieldtype": "Data",
+   "label": "Source Account Name"
+  },
+  {
+   "fieldname": "source_account_number",
+   "fieldtype": "Data",
+   "label": "Source Account Number"
+  },
+  {
+   "fieldname": "source_bank_name",
+   "fieldtype": "Data",
+   "label": "Source Bank Name"
+  },
+  {
+   "fieldname": "source_bank_code",
+   "fieldtype": "Data",
+   "label": "Source Bank Code"
+  },
+  {
+   "fieldname": "column_break_cwhqh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "destination_account_number",
+   "fieldtype": "Data",
+   "label": "Destination Account Number"
+  },
+  {
+   "fieldname": "destination_account_name",
+   "fieldtype": "Data",
+   "label": "Destination Account Name"
+  },
+  {
+   "fieldname": "destination_bank_name",
+   "fieldtype": "Data",
+   "label": "Destination Bank Name"
+  },
+  {
+   "fieldname": "destination_bank_code",
+   "fieldtype": "Data",
+   "label": "Destination Bank Code"
+  },
+  {
+   "fieldname": "transaction_type",
+   "fieldtype": "Select",
+   "label": "Transaction Type",
+   "options": "\nINFLOW\nOUTFLOW"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "\nSuccessful\nPending\nFailed\nCONFIRMED\nFAILED"
+  },
+  {
+   "fieldname": "narration",
+   "fieldtype": "Small Text",
+   "label": "Narration"
+  },
+  {
+   "fieldname": "created_at",
+   "fieldtype": "Data",
+   "label": "Created At"
+  },
+  {
+   "fieldname": "updated_at",
+   "fieldtype": "Data",
+   "label": "Updated At"
+  },
+  {
+   "fieldname": "metadata",
+   "fieldtype": "Long Text",
+   "label": "Metadata"
+  },
+  {
+   "fieldname": "data_details",
+   "fieldtype": "Long Text",
+   "label": "Data Details"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-06-22 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Purpledove Payment",
+ "name": "Purpledove Payment Log",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

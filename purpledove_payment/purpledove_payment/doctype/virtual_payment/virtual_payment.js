@@ -345,7 +345,9 @@ frappe.ui.form.on('Virtual Payment', {
             
             if (response?.success === true) {
                 frm.events.handle_payment_success(frm, response);
-            } else if (response?.error?.includes("Insufficient Funds")) {
+            } else if (/insufficient/i.test(response?.error || response?.message || "")) {
+                // Covers both our local "Insufficient Funds" and the gateway's
+                // "Insufficient wallet balance" operational error.
                 frm.events.handle_insufficient_funds(frm, response);
             } else {
                 frm.events.handle_payment_error(frm, response);
@@ -493,10 +495,14 @@ frappe.ui.form.on('Virtual Payment', {
         };
         
         const status_code = response?.status_code;
-        const error_config = error_map[status_code] || {
-            title: __("Payment Failed"),
-            message: response?.error || response?.message || __("An error occurred during payment."),
-            show_retry: true
+        const mapped = error_map[status_code];
+        // Always prefer the real gateway/server message when present, so users
+        // see the actual reason (e.g. a specific operational error) instead of
+        // a generic "Server Error".
+        const error_config = {
+            title: mapped?.title || __("Payment Failed"),
+            message: response?.error || response?.message || mapped?.message || __("An error occurred during payment."),
+            show_retry: mapped ? mapped.show_retry : true
         };
         
         const error_dialog = new frappe.ui.Dialog({

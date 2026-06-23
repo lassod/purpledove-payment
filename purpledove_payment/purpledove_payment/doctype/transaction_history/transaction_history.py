@@ -34,6 +34,7 @@ class TransactionHistory(Document):
             # Normalize BuyPower MFB response (nested) with legacy fallbacks.
             destination = transaction_data.get("destination", {}) or {}
             amount_obj = transaction_data.get("amount", {})
+            # BuyPower MFB amounts are in naira.
             amount_val = amount_obj.get("value", 0) if isinstance(amount_obj, dict) else (amount_obj or 0)
             source = transaction_data.get("source", {}) or {}
 
@@ -82,7 +83,7 @@ class TransactionHistory(Document):
             return transaction
             
         except Exception as e:
-            frappe.log_error(f"Error creating transaction history: {str(e)}", "Transaction History Creation Error")
+            frappe.log_error(message=f"Error creating transaction history: {str(e)}", title="Transaction History Creation Error")
             return None
     
     @staticmethod
@@ -113,5 +114,5 @@ class TransactionHistory(Document):
                 return doc
             
         except Exception as e:
-            frappe.log_error(f"Error updating transaction status: {str(e)}", "Transaction Status Update Error")
+            frappe.log_error(message=f"Error updating transaction status: {str(e)}", title="Transaction Status Update Error")
             return None

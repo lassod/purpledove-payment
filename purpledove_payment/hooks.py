@@ -67,6 +67,10 @@ app_license = "MIT"
 
 after_app_install = "purpledove_payment.utils.fetch_and_save_banks"
 
+# Repopulate the bank list on every `bench migrate` so it can recover if the
+# BuyPower credentials / base URL were not configured at install time.
+after_migrate = "purpledove_payment.utils.fetch_and_save_banks"
+
 # Uninstallation
 # ------------
 

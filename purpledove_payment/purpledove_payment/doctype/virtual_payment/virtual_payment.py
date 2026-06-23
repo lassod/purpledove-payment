@@ -70,7 +70,7 @@ class VirtualPayment(Document):
             token = frappe.db.get_single_value("System Settings", "live_token") if frappe.db else None
         
         if not token:
-            frappe.log_error("LIVE_TOKEN not found in environment variables, frappe.conf, or System Settings", "Token Configuration Error")
+            frappe.log_error(message="LIVE_TOKEN not found in environment variables, frappe.conf, or System Settings", title="Token Configuration Error")
             frappe.logger().error("Available environment variables: " + str(list(os.environ.keys())))
             return None
         
@@ -96,7 +96,7 @@ class VirtualPayment(Document):
                 raise ValueError(f"Bank code not found for: {bank_name}")
             return bank_doc.bank_code
         except Exception as e:
-            frappe.log_error(f"Error retrieving bank info: {str(e)}", "Bank Retrieval Error")
+            frappe.log_error(message=f"Error retrieving bank info: {str(e)}", title="Bank Retrieval Error")
             raise
     
     # ========== Wallet Management ==========
@@ -154,7 +154,7 @@ class VirtualPayment(Document):
             return self._verify_bank_account(bearer_token, bank_code, account_number, doc)
             
         except Exception as e:
-            frappe.log_error(f"Bank verification error: {str(e)}", "Verification Process Error")
+            frappe.log_error(message=f"Bank verification error: {str(e)}", title="Verification Process Error")
             return {
                 "success": False,
                 "error": f"Verification error: {str(e)}"
@@ -207,14 +207,14 @@ class VirtualPayment(Document):
                     "bank_name": bank_name
                 }
             else:
-                frappe.log_error(f"Verification failed: {response.text}", "Bank Verification API Error")
+                frappe.log_error(message=f"Verification failed: {response.text}", title="Bank Verification API Error")
                 return {
                     "success": False,
                     "error": f"Verification failed with status code {response.status_code}"
                 }
                 
         except requests.RequestException as e:
-            frappe.log_error(f"API request error: {str(e)}", "Network Error")
+            frappe.log_error(message=f"API request error: {str(e)}", title="Network Error")
             return {
                 "success": False,
                 "error": "Network error occurred during verification"
@@ -331,7 +331,7 @@ class VirtualPayment(Document):
             }
             
         except Exception as e:
-            frappe.log_error(f"Payment Error: {str(e)}", "VirtualPayment Error")
+            frappe.log_error(message=f"Payment Error: {str(e)}", title="VirtualPayment Error")
             return {
                 "success": False,
                 "error": f"Payment error: {str(e)}"
@@ -410,7 +410,7 @@ class VirtualPayment(Document):
             }
             
         except Exception as e:
-            frappe.log_error(f"Error validating virtual wallet balance: {str(e)}", "Virtual Wallet Validation Error")
+            frappe.log_error(message=f"Error validating virtual wallet balance: {str(e)}", title="Virtual Wallet Validation Error")
             return {
                 "success": False,
                 "error": f"Error validating virtual wallet balance: {str(e)}"
@@ -427,7 +427,7 @@ class VirtualPayment(Document):
             return new_balance
             
         except Exception as e:
-            frappe.log_error(f"Error updating wallet balance: {str(e)}", "Wallet Balance Update Error")
+            frappe.log_error(message=f"Error updating wallet balance: {str(e)}", title="Wallet Balance Update Error")
             raise Exception(f"Payment processed but failed to update wallet balance: {str(e)}")
     
     def _process_payment_request(self, bearer_token, bank_code, payment_amount, account_number):
@@ -451,7 +451,7 @@ class VirtualPayment(Document):
                 self.destination_bank_code = destination_bank_code
                 
             except Exception as e:
-                frappe.log_error(f"Could not get bank code for '{self.destination_bank}': {str(e)}", "Bank Code Error")
+                frappe.log_error(message=f"Could not get bank code for '{self.destination_bank}': {str(e)}", title="Bank Code Error")
                 frappe.logger().error(f"Bank code retrieval failed: {str(e)}")
         
         # Source account must be the paying wallet's own reserved account.
@@ -465,8 +465,24 @@ class VirtualPayment(Document):
                 "error": "Source wallet account number not found. Cannot process payment."
             }
         
-        # BuyPower MFB transfer payload. source.type = "wallet" debits the
-        # paying wallet's own reserved account (not a shared collection account).
+        # BuyPower MFB transfer payload (verified correct 2026-06-23).
+        #
+        # This merchant is a "wallet group": collection-account transfers are
+        # disabled ("Collection-account transfers are disabled for wallet
+        # groups. Transfer from an individual wallet account instead."), so
+        # payouts use source.type "wallet" with the wallet's accountNumber.
+        # BuyPower's schema accepts ONLY {type, accountNumber} for a wallet
+        # source (balance/exchangeRef/reference/walletId are all rejected with
+        # 400), and our accountNumber correctly resolves the wallet (an
+        # over-balance amount returns "Insufficient wallet balance").
+        #
+        # KNOWN BLOCKER (BuyPower-side, not a payload bug): for affordable
+        # amounts this still returns HTTP 500 "Failed to fund wallet account
+        # from collection account: The Following Parameters Contain Errors".
+        # The wallet's tracked balance is not in a payable state (the pooled
+        # collection balance reads 0), so BuyPower cannot fund the payout.
+        # Resolution requires BuyPower enabling wallet payout / settling wallet
+        # funds for this wallet group. No client-side payload change fixes it.
         reference = self.transaction_reference or self._generate_reference()
         narration = (str(self.narration) if self.narration else "Payment Transfer")[:50]
 
@@ -480,7 +496,10 @@ class VirtualPayment(Document):
                 "accountNumber": str(self.destination_account_number) if self.destination_account_number else "",
             },
             "amount": {
-                "value": float(self.amount) if self.amount else 0.0,
+                # BuyPower MFB expects a POSITIVE INTEGER amount in naira.
+                # self.amount is already in naira; the API rejects float values
+                # (that was the original "Parameters Contain Errors" cause).
+                "value": int(round(float(self.amount))) if self.amount else 0,
                 "currency": "NGN",
             },
             "narration": narration,
@@ -507,7 +526,7 @@ class VirtualPayment(Document):
             
         if validation_errors:
             error_msg = "Request validation failed: " + ", ".join(validation_errors)
-            frappe.log_error(f"{error_msg}\nRequest data: {post_data}\nForm data: destination_bank={self.destination_bank}, destination_bank_code={self.destination_bank_code}, destination_account_number={self.destination_account_number}, amount={self.amount}, narration={self.narration}", "Payment Validation Error")
+            frappe.log_error(message=f"{error_msg}\nRequest data: {post_data}\nForm data: destination_bank={self.destination_bank}, destination_bank_code={self.destination_bank_code}, destination_account_number={self.destination_account_number}, amount={self.amount}, narration={self.narration}", title="Payment Validation Error")
             frappe.logger().error(error_msg)
             return {"success": False, "error": error_msg}
         
@@ -563,14 +582,14 @@ class VirtualPayment(Document):
                 return {"success": False, "error": "Payment request timed out"}
                 
             except requests.exceptions.ConnectionError as e:
-                frappe.log_error(f"Connection error on attempt {attempt + 1}: {str(e)}", "Payment Connection Error")
+                frappe.log_error(message=f"Connection error on attempt {attempt + 1}: {str(e)}", title="Payment Connection Error")
                 if attempt < self.MAX_RETRIES - 1:
                     time.sleep(self.RETRY_DELAYS[attempt])
                     continue
                 return {"success": False, "error": f"Connection error occurred: {str(e)}"}
                 
             except requests.RequestException as e:
-                frappe.log_error(f"Request error on attempt {attempt + 1}: {str(e)}", "Payment Request Error")
+                frappe.log_error(message=f"Request error on attempt {attempt + 1}: {str(e)}", title="Payment Request Error")
                 if attempt < self.MAX_RETRIES - 1:
                     time.sleep(self.RETRY_DELAYS[attempt])
                     continue
@@ -589,14 +608,14 @@ class VirtualPayment(Document):
                 tx_status = str(response_data.get("status", "")).lower()
                 if tx_status == "failed":
                     msg = response_json.get("message") or "Transfer failed"
-                    frappe.log_error(f"Transfer failed: {response.text}", "Payment Failed")
+                    frappe.log_error(message=f"Transfer failed: {response.text}", title="Payment Failed")
                     return {"success": False, "error": msg, "response_data": response_data}
                 frappe.logger().info(
                     f"Transfer accepted: ref={response_data.get('reference')} status={tx_status}"
                 )
                 return {"success": True, "response_data": response_data}
             except json.JSONDecodeError as e:
-                frappe.log_error(f"Invalid JSON in successful response: {response.text}", "Payment JSON Error")
+                frappe.log_error(message=f"Invalid JSON in successful response: {response.text}", title="Payment JSON Error")
                 return {"success": False, "error": "Invalid response format from payment gateway"}
         
         elif response.status_code == 502 and attempt < self.MAX_RETRIES - 1:
@@ -618,21 +637,25 @@ class VirtualPayment(Document):
                 
                 # Log detailed error for debugging
                 frappe.log_error(
-                    f"Payment API Error: Status {response.status_code}\n"
-                    f"Error message: {error_message}\n"
-                    f"Full response: {response.text}\n"
-                    f"Request headers: {response.request.headers}\n"
-                    f"Request body: {response.request.body}",
-                    "Payment API Error"
+                    message=(
+                        f"Payment API Error: Status {response.status_code}\n"
+                        f"Error message: {error_message}\n"
+                        f"Full response: {response.text}\n"
+                        f"Request headers: {response.request.headers}\n"
+                        f"Request body: {response.request.body}"
+                    ),
+                    title="Payment API Error",
                 )
-                
+
             except json.JSONDecodeError:
                 frappe.log_error(
-                    f"Payment failed with status {response.status_code}\n"
-                    f"Response: {response.text}\n"
-                    f"Request headers: {response.request.headers}\n"
-                    f"Request body: {response.request.body}",
-                    "Payment API Error"
+                    message=(
+                        f"Payment failed with status {response.status_code}\n"
+                        f"Response: {response.text}\n"
+                        f"Request headers: {response.request.headers}\n"
+                        f"Request body: {response.request.body}"
+                    ),
+                    title="Payment API Error",
                 )
             
             return {
@@ -686,7 +709,7 @@ class VirtualPayment(Document):
                 "error": f"Virtual wallet '{wallet_name}' not found"
             }
         except Exception as e:
-            frappe.log_error(f"Error checking wallet balance: {str(e)}", "Balance Check Error")
+            frappe.log_error(message=f"Error checking wallet balance: {str(e)}", title="Balance Check Error")
             return {
                 "success": False,
                 "error": f"Error checking wallet balance: {str(e)}"
@@ -773,14 +796,14 @@ class VirtualPayment(Document):
                         "error": "PIN not properly configured. Please reset your PIN."
                     }
             except Exception as e:
-                frappe.log_error(f"PIN decryption error: {str(e)}", "PIN Decryption Error")
+                frappe.log_error(message=f"PIN decryption error: {str(e)}", title="PIN Decryption Error")
                 return {
                     "success": False,
                     "error": "Unable to verify PIN. Please contact administrator or reset your PIN."
                 }
                 
         except Exception as e:
-            frappe.log_error(f"PIN verification error: {str(e)}", "PIN Verification Error")
+            frappe.log_error(message=f"PIN verification error: {str(e)}", title="PIN Verification Error")
             return {
                 "success": False,
                 "error": f"PIN verification failed: {str(e)}"
@@ -856,7 +879,7 @@ class VirtualPayment(Document):
                             data
                         )
                     except Exception as e:
-                        frappe.log_error(f"Error updating transaction status: {str(e)}", "Status Update Error")
+                        frappe.log_error(message=f"Error updating transaction status: {str(e)}", title="Status Update Error")
                     
                     return {
                         "success": True,
@@ -875,14 +898,14 @@ class VirtualPayment(Document):
                     }
                     
             except requests.RequestException as e:
-                frappe.log_error(f"Status check request error: {str(e)}", "Transaction Status Error")
+                frappe.log_error(message=f"Status check request error: {str(e)}", title="Transaction Status Error")
                 return {
                     "success": False,
                     "error": "Network error occurred while checking status"
                 }
                 
         except Exception as e:
-            frappe.log_error(f"Transaction status check error: {str(e)}", "Status Check Error")
+            frappe.log_error(message=f"Transaction status check error: {str(e)}", title="Status Check Error")
             return {
                 "success": False,
                 "error": f"Status check error: {str(e)}"

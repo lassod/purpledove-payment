@@ -108,7 +108,7 @@ def _handle_transfer_update(event, data):
 
     reference = data.get("reference")
     status = (data.get("status") or event.split(".")[-1] or "").lower()
-    status_map = {"paid": "Successful", "pending": "Pending", "failed": "Failed"}
+    status_map = {"paid": "Successful", "pending": "Pending", "failed": "Failed", "confirmed": "Successful", "successful": "Successful"}
     mapped_status = status_map.get(status, "Pending")
 
     if reference:
@@ -122,6 +122,7 @@ def _handle_transfer_update(event, data):
 def _record_payment_log(event, data, payload):
     """
     Persist a Purpledove Payment Log entry for the webhook event.
+    Uses same structure as Purpledove Admin Log - accepts any event type.
 
     Defensive by design: any failure here MUST NOT break webhook processing,
     so all errors are swallowed (and logged) rather than raised.
@@ -130,23 +131,32 @@ def _record_payment_log(event, data, payload):
         source = data.get("source", {}) or {}
         destination = data.get("destination", {}) or {}
         amount_obj = data.get("amount", {})
-        amount = flt(amount_obj.get("value")) if isinstance(amount_obj, dict) else flt(amount_obj)
+        amount = float(amount_obj.get("value", 0)) if isinstance(amount_obj, dict) else float(amount_obj or 0)
         metadata = data.get("metadata", {}) or {}
 
-        is_inflow = event in ("static_account.transaction.created", "invoice.paid")
-        is_transfer = event in ("transfer.pending", "transfer.paid", "transfer.failed")
-        transaction_type = "INFLOW" if is_inflow else ("OUTFLOW" if is_transfer else None)
+        # Accept any event type - no restrictions
+        is_inflow = "inflow" in event.lower() or "created" in event.lower() or "paid" in event.lower()
+        is_transfer = "transfer" in event.lower() or "outflow" in event.lower()
+        transaction_type = "INFLOW" if is_inflow else ("OUTFLOW" if is_transfer else "")
 
-        raw_status = (data.get("status") or (event.split(".")[-1] if event else "")).lower()
-        status_map = {"paid": "Successful", "successful": "Successful", "pending": "Pending", "failed": "Failed"}
-        status = status_map.get(raw_status, "Pending")
+        # Use raw status from webhook (no mapping)
+        log_status = data.get("status") or (event.split(".")[-1] if event else "")
+
+        # Determine our account number (same logic as admin)
+        if is_inflow:
+            our_account = destination.get("accountNumber")
+        else:
+            our_account = source.get("accountNumber") or metadata.get("source_account_number")
+        our_account = our_account or data.get("accountNumber")
 
         frappe.get_doc({
             "doctype": "Purpledove Payment Log",
             "event": event,
+            "transaction_id": data.get("transactionId", 0),
             "transaction_reference": data.get("reference") or data.get("transactionReference"),
+            "account_exchange_reference": data.get("accountExchangeReference"),
             "session_id": data.get("sessionId"),
-            "account_number": destination.get("accountNumber") if is_inflow else (source.get("accountNumber") or data.get("accountNumber")),
+            "account_number": our_account,
             "account_type": data.get("type") or data.get("accountType"),
             "amount": amount,
             "source_account_name": source.get("accountName") or data.get("sourceAccountName"),
@@ -158,8 +168,10 @@ def _record_payment_log(event, data, payload):
             "destination_bank_name": destination.get("bankName") or data.get("destinationBankName"),
             "destination_bank_code": destination.get("bankCode") or data.get("destinationBankCode"),
             "transaction_type": transaction_type,
-            "status": status,
+            "status": log_status,
             "narration": data.get("narration"),
+            "created_at": data.get("createdAt"),
+            "updated_at": data.get("updatedAt"),
             "metadata": json.dumps(metadata),
             "data_details": json.dumps(payload),
         }).insert(ignore_permissions=True)
@@ -171,10 +183,7 @@ def _record_payment_log(event, data, payload):
 def wallet_log():
     """
     BuyPower MFB webhook receiver.
-
-    Handles (v2 `{type, data}` and legacy `{event, data}`):
-      - static_account.transaction.created / invoice.paid -> credit wallet
-      - transfer.pending | transfer.paid | transfer.failed -> update history
+    Accepts any event type - no restrictions.
     """
     try:
         raw = frappe.request.get_data()  # raw bytes (needed for signature)
@@ -192,13 +201,17 @@ def wallet_log():
         # Keep an audit trail of every webhook on the client side.
         _record_payment_log(event, data, payload)
 
-        if event in ("static_account.transaction.created", "invoice.paid"):
+        # Process wallet operations based on event type
+        is_inflow = "inflow" in event.lower() or "created" in event.lower() or "paid" in event.lower()
+        is_transfer = "transfer" in event.lower() or "outflow" in event.lower()
+
+        if is_inflow:
             result = _handle_inflow(event, data)
-        elif event in ("transfer.pending", "transfer.paid", "transfer.failed"):
+        elif is_transfer:
             result = _handle_transfer_update(event, data)
         else:
-            frappe.logger().info(f"Unhandled BuyPower webhook event: {event}")
-            result = {"success": True, "message": f"Event '{event}' acknowledged"}
+            # Acknowledge any other event type
+            result = {"success": True, "message": f"Event '{event}' logged"}
 
         frappe.db.commit()
         return result

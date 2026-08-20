@@ -11,6 +11,61 @@ from frappe.utils import get_site_name, now_datetime
 from frappe.model.document import Document
 
 class VirtualWallet(Document):
+    # ===== CRUD Hooks =====
+
+    def before_save(self):
+        """Capture site_name before saving for admin sync"""
+        try:
+            # Capture the full site URL for admin registration
+            self.site_name = str(frappe.local.site) if frappe.local.site else frappe.conf.get('site_name', 'unknown_site')
+        except:
+            self.site_name = frappe.conf.get('site_name', 'unknown_site')
+
+    def after_insert(self):
+        """After wallet is created, register with admin"""
+        # Only register if we have an account_number (not a draft)
+        if self.account_number and self.wallet_id:
+            self.register_with_admin_system({
+                "name": self.wallet_name,
+                "accountNumber": self.account_number,
+                "exchangeRef": self.exchange_ref or self.wallet_id,
+                "currency": self.currency or "NGN",
+                "description": self.description or "",
+                "bvn": self.bvn or "",
+                "accountType": self.account_type or "static",
+                "bankCode": self.bank_code or "",
+                "bankName": self.bank_name or "",
+                "businessId": "",
+                "id": self.wallet_id or "",
+            })
+
+    def on_update(self):
+        """When wallet is updated, sync to admin"""
+        # Only sync if we have an account_number and the document is submitted
+        if self.account_number and not self.docstatus == 0:
+            # Check if important fields changed
+            if self.has_value_changed('wallet_name') or self.has_value_changed('account_number') or self.has_value_changed('site_name'):
+                self.sync_to_admin()
+
+    def on_trash(self):
+        """Called when the document is being deleted"""
+        try:
+            self.unregister_from_client_wallet()
+            self.delete_associated_pin()
+        except Exception as e:
+            # Use shorter error message for logging to avoid truncation
+            error_msg = str(e)[:50]
+            self.safe_log_error(f"Wallet deletion error: {error_msg}", "Wallet Del Error")
+            # Don't prevent deletion even if unregistration fails
+
+    # ===== Helper Methods =====
+
+    def has_value_changed(self, fieldname):
+        """Check if a field value has changed"""
+        if not self.get(fieldname):
+            return False
+        return self._is_field_changed(fieldname)
+
     def safe_log_error(self, data, title_prefix="Log", max_title_length=130):
         """
         Safely log errors with proper title length limits
@@ -302,18 +357,26 @@ class VirtualWallet(Document):
         except Exception as e:
             self.safe_log_error(f"Unexpected error: {str(e)[:30]}", "Del Error")
     
-    def register_with_admin_system(self, wallet_data):
-        """Register wallet with admin system using the single endpoint"""
+    def register_with_admin_system(self, wallet_data, is_update=False):
+        """Register or update wallet with admin system using the single endpoint"""
         try:
-            # Get site name with fallback
+            # Get full site URL (including domain) for proper webhook forwarding
             try:
-                site_name = get_site_name(frappe.local.site)
+                # frappe.local.site contains the full site name like 'demo3.purpledove.net'
+                site_name = str(frappe.local.site) if frappe.local.site else frappe.conf.get('site_name', 'unknown_site')
             except:
                 site_name = frappe.conf.get('site_name', 'unknown_site')
-            
-            # Prepare admin payload for registration
+
+            # Use site_name from document if available (from before_save)
+            if hasattr(self, 'site_name') and self.site_name:
+                site_name = str(self.site_name)
+
+            # Determine event type based on whether this is an update
+            event_type = "wallet_updated" if is_update else "wallet_created"
+
+            # Prepare admin payload for registration/update
             admin_payload = {
-                "event": "wallet_created",
+                "event": event_type,
                 "data": {
                     "wallet_name": str(wallet_data.get("name", self.wallet_name)),
                     "currency": str(wallet_data.get("currency", "NGN")),
@@ -447,6 +510,26 @@ class VirtualWallet(Document):
         }
         return self.register_with_admin_system(wallet_data)
 
+    def sync_to_admin(self):
+        """Sync this wallet's current state to buypower_admin (called on update)."""
+        if not self.account_number:
+            return {"success": False, "message": "No account_number on this wallet — cannot sync"}
+
+        wallet_data = {
+            "name": self.wallet_name,
+            "accountNumber": self.account_number,
+            "exchangeRef": self.exchange_ref or self.wallet_id or "",
+            "currency": self.currency or "NGN",
+            "description": self.description or "",
+            "bvn": self.bvn or "",
+            "accountType": self.account_type or "static",
+            "bankCode": self.bank_code or "",
+            "bankName": self.bank_name or "",
+            "businessId": "",
+            "id": self.wallet_id or "",
+        }
+        return self.register_with_admin_system(wallet_data)
+
     @frappe.whitelist()
     def create_wallet(self):
         """
@@ -521,9 +604,10 @@ class VirtualWallet(Document):
                     self.safe_log_error("Empty data from API", "Response Error")
                     return {"error": "No data received from the API"}
 
-                # Get site name with fallback
+                # Get full site URL (including domain) for proper webhook forwarding
                 try:
-                    site_name = get_site_name(frappe.local.site)
+                    # frappe.local.site contains the full site name like 'demo3.purpledove.net'
+                    site_name = str(frappe.local.site) if frappe.local.site else frappe.conf.get('site_name', 'unknown_site')
                 except:
                     site_name = frappe.conf.get('site_name', 'unknown_site')
 

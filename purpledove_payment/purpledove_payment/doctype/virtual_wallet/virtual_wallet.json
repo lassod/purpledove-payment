@@ -146,16 +146,17 @@
   {
    "fieldname": "balance",
    "fieldtype": "Float",
-   "label": "Balance"
+   "label": "Balance",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-01 10:17:41.927424",
+ "modified": "2026-06-23 12:46:28.410587",
  "modified_by": "Administrator",
  "module": "Purpledove Payment",
  "name": "Virtual Wallet",
- "naming_rule": "Expression",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
   {
@@ -171,6 +172,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

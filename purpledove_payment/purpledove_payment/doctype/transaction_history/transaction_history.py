@@ -104,14 +104,19 @@ class TransactionHistory(Document):
             if transaction:
                 doc = frappe.get_doc("Transaction History", transaction)
                 doc.status = status
-                
+
                 if api_response:
                     doc.api_response = frappe.as_json(api_response)
-                
+
                 doc.save(ignore_permissions=True)
                 frappe.db.commit()
-                
+
                 return doc
+
+            frappe.logger().info(
+                f"update_status: no Transaction History for reference {transaction_reference} "
+                "(status change dropped)"
+            )
             
         except Exception as e:
             frappe.log_error(message=f"Error updating transaction status: {str(e)}", title="Transaction Status Update Error")

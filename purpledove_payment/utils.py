@@ -71,9 +71,14 @@ def _handle_inflow(event, data):
         frappe.logger().info(f"Inflow ignored: no Virtual Wallet for account {account_number}")
         return {"success": True, "message": "No matching wallet"}
 
-    wallet_doc = frappe.get_doc("Virtual Wallet", wallet_name)
-    new_balance = flt(flt(wallet_doc.balance or 0) + amount, 2)
-    wallet_doc.db_set("balance", new_balance, commit=True)
+    # Atomic increment: the single UPDATE holds the row lock, so concurrent
+    # webhook workers can no longer clobber each other's credits (the old
+    # read-modify-write lost ~65M naira of credits during bulk-inflow bursts).
+    frappe.db.sql(
+        "UPDATE `tabVirtual Wallet` SET balance = ROUND(balance + %s, 2), modified = %s WHERE name = %s",
+        (amount, frappe.utils.now_datetime(), wallet_name),
+    )
+    new_balance = frappe.db.get_value("Virtual Wallet", wallet_name, "balance")
     return {"success": True, "message": "Wallet credited", "balance": new_balance}
 
 
@@ -94,9 +99,10 @@ def _reverse_failed_transfer(reference):
     if not wallet_name:
         return
 
-    wallet_doc = frappe.get_doc("Virtual Wallet", wallet_name)
-    new_balance = flt(wallet_doc.balance or 0) + flt(th.amount or 0)
-    wallet_doc.db_set("balance", new_balance, commit=True)
+    frappe.db.sql(
+        "UPDATE `tabVirtual Wallet` SET balance = ROUND(balance + %s, 2), modified = %s WHERE name = %s",
+        (flt(th.amount or 0), frappe.utils.now_datetime(), wallet_name),
+    )
     frappe.logger().info(f"Reversed failed transfer {reference}: +{th.amount} to {wallet_name}")
 
 
@@ -134,10 +140,15 @@ def _record_payment_log(event, data, payload):
         amount = float(amount_obj.get("value", 0)) if isinstance(amount_obj, dict) else float(amount_obj or 0)
         metadata = data.get("metadata", {}) or {}
 
-        # Accept any event type - no restrictions
-        is_inflow = "inflow" in event.lower() or "created" in event.lower() or "paid" in event.lower()
-        is_transfer = "transfer" in event.lower() or "outflow" in event.lower()
-        transaction_type = "INFLOW" if is_inflow else ("OUTFLOW" if is_transfer else "")
+        # Accept any event type - no restrictions. Same precedence rule as the
+        # event routing below: 'transfer.paid' contains 'paid' and must not be
+        # classified as an inflow.
+        event_name = (event or "").lower()
+        is_transfer = "transfer" in event_name or "outflow" in event_name
+        is_inflow = not is_transfer and (
+            "inflow" in event_name or "created" in event_name or "paid" in event_name
+        )
+        transaction_type = "OUTFLOW" if is_transfer else ("INFLOW" if is_inflow else "")
 
         # Use raw status from webhook (no mapping)
         log_status = data.get("status") or (event.split(".")[-1] if event else "")
@@ -198,17 +209,38 @@ def wallet_log():
         event = payload.get("type") or payload.get("event")
         data = payload.get("data", {}) or {}
 
+        # Idempotency: BuyPower and buypower_admin may redeliver events
+        # (retries, manual resends). Dedupe on (reference, event) so a
+        # redelivered inflow cannot double-credit a wallet and a redelivered
+        # failure cannot double-reverse. Distinct events for one reference
+        # (transfer.pending -> transfer.paid) still process normally.
+        reference = data.get("reference") or data.get("transactionReference")
+        if reference and event and frappe.db.exists(
+            "Purpledove Payment Log",
+            {"transaction_reference": reference, "event": event},
+        ):
+            _record_payment_log(event, data, payload)
+            frappe.db.commit()
+            return {"success": True, "message": "Duplicate event ignored"}
+
         # Keep an audit trail of every webhook on the client side.
         _record_payment_log(event, data, payload)
 
-        # Process wallet operations based on event type
-        is_inflow = "inflow" in event.lower() or "created" in event.lower() or "paid" in event.lower()
-        is_transfer = "transfer" in event.lower() or "outflow" in event.lower()
+        # Process wallet operations based on event type. Transfer events are
+        # checked FIRST: 'transfer.paid' contains the substring 'paid', which
+        # would otherwise match the inflow test and route status updates to
+        # the (wrong) inflow handler — that is why Transaction History rows
+        # stayed Pending forever.
+        event_name = (event or "").lower()
+        is_transfer = "transfer" in event_name or "outflow" in event_name
+        is_inflow = not is_transfer and (
+            "inflow" in event_name or "created" in event_name or "paid" in event_name
+        )
 
-        if is_inflow:
-            result = _handle_inflow(event, data)
-        elif is_transfer:
+        if is_transfer:
             result = _handle_transfer_update(event, data)
+        elif is_inflow:
+            result = _handle_inflow(event, data)
         else:
             # Acknowledge any other event type
             result = {"success": True, "message": f"Event '{event}' logged"}
@@ -354,6 +386,36 @@ def fetch_and_save_banks(app_name=None, *args, **kwargs):
         return {"status": "error", "message": str(e)}
 
         return {"status": "error", "message": str(e)}
+
+
+def reconcile_wallet_balances():
+    """
+    Sync every wallet's balance from BuyPower MFB. Runs daily via
+    scheduler_events so residual drift (missed webhooks, races predating the
+    atomic-credit fix) self-heals within a day.
+    """
+    wallets = frappe.get_all("Virtual Wallet", fields=["name"])
+    ok = fail = 0
+    for row in wallets:
+        try:
+            doc = frappe.get_doc("Virtual Wallet", row["name"])
+            result = doc.fetch_remote_balance(update=True)
+            if result.get("success"):
+                ok += 1
+            else:
+                fail += 1
+                frappe.log_error(
+                    title="Wallet Reconciliation Failed",
+                    message=f"Wallet '{row['name']}': {result.get('error')}",
+                )
+        except Exception as e:
+            fail += 1
+            frappe.log_error(
+                title="Wallet Reconciliation Error",
+                message=f"Wallet '{row['name']}': {str(e)}",
+            )
+    frappe.logger().info(f"reconcile_wallet_balances: {ok} synced, {fail} failed")
+    return {"synced": ok, "failed": fail}
 
 
 def re_register_all_wallets(app_name=None, *args, **kwargs):

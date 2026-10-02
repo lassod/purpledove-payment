@@ -371,13 +371,26 @@ class VirtualPayment(Document):
                     "error": f"Virtual wallet {wallet_name} not found"
                 }
 
-            # Best-effort: refresh the live balance from BuyPower MFB before
-            # validating. Falls back to the stored balance if the API is down.
+            # Refresh the live balance from BuyPower MFB before validating.
+            # Fail CLOSED: paying against a stale local balance has already
+            # caused silent drift, so refuse the payment if the refresh fails.
             try:
-                wallet_doc.fetch_remote_balance(update=True)
+                refresh_result = wallet_doc.fetch_remote_balance(update=True) or {}
                 wallet_doc.reload()
+                if not refresh_result.get("success"):
+                    raise RuntimeError(refresh_result.get("error") or "unknown error")
             except Exception as e:
-                frappe.logger().warning(f"Live balance refresh failed, using stored balance: {e}")
+                frappe.log_error(
+                    message=f"Live balance refresh failed for wallet {wallet_name}: {e}",
+                    title="Wallet Balance Refresh Failed",
+                )
+                return {
+                    "success": False,
+                    "error": (
+                        "Could not verify the live wallet balance with BuyPower MFB, "
+                        f"so the payment was not processed. Please try again shortly. ({e})"
+                    ),
+                }
 
             # Get virtual wallet balance from the balance field
             current_balance = flt(wallet_doc.balance or 0.0)

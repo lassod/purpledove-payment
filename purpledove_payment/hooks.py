@@ -137,23 +137,11 @@ after_migrate = [
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"purpledove_payment.tasks.all"
-# 	],
-# 	"daily": [
-# 		"purpledove_payment.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"purpledove_payment.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"purpledove_payment.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"purpledove_payment.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"purpledove_payment.utils.reconcile_wallet_balances"
+	],
+}
 
 # Testing
 # -------

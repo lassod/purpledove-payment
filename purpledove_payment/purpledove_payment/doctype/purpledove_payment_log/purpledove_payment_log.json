@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "autoname": "format:{transaction_reference}-{########}",
  "creation": "2025-06-22 00:00:00",
  "default_view": "List",
@@ -39,22 +39,26 @@
   {
    "fieldname": "event",
    "fieldtype": "Data",
-   "label": "Event"
+   "label": "Event",
+   "read_only": 1
   },
   {
    "fieldname": "transaction_id",
    "fieldtype": "Int",
-   "label": "Transaction ID"
+   "label": "Transaction ID",
+   "read_only": 1
   },
   {
    "fieldname": "transaction_reference",
    "fieldtype": "Data",
-   "label": "Transaction Reference"
+   "label": "Transaction Reference",
+   "read_only": 1
   },
   {
    "fieldname": "account_exchange_reference",
    "fieldtype": "Data",
-   "label": "Account Exchange Reference"
+   "label": "Account Exchange Reference",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_zax05",
@@ -63,22 +67,26 @@
   {
    "fieldname": "session_id",
    "fieldtype": "Data",
-   "label": "Session ID"
+   "label": "Session ID",
+   "read_only": 1
   },
   {
    "fieldname": "account_number",
    "fieldtype": "Data",
-   "label": "Account Number"
+   "label": "Account Number",
+   "read_only": 1
   },
   {
    "fieldname": "account_type",
    "fieldtype": "Data",
-   "label": "Account Type"
+   "label": "Account Type",
+   "read_only": 1
   },
   {
    "fieldname": "amount",
    "fieldtype": "Float",
-   "label": "Amount"
+   "label": "Amount",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_zseal",
@@ -87,22 +95,26 @@
   {
    "fieldname": "source_account_name",
    "fieldtype": "Data",
-   "label": "Source Account Name"
+   "label": "Source Account Name",
+   "read_only": 1
   },
   {
    "fieldname": "source_account_number",
    "fieldtype": "Data",
-   "label": "Source Account Number"
+   "label": "Source Account Number",
+   "read_only": 1
   },
   {
    "fieldname": "source_bank_name",
    "fieldtype": "Data",
-   "label": "Source Bank Name"
+   "label": "Source Bank Name",
+   "read_only": 1
   },
   {
    "fieldname": "source_bank_code",
    "fieldtype": "Data",
-   "label": "Source Bank Code"
+   "label": "Source Bank Code",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_cwhqh",
@@ -111,63 +123,74 @@
   {
    "fieldname": "destination_account_number",
    "fieldtype": "Data",
-   "label": "Destination Account Number"
+   "label": "Destination Account Number",
+   "read_only": 1
   },
   {
    "fieldname": "destination_account_name",
    "fieldtype": "Data",
-   "label": "Destination Account Name"
+   "label": "Destination Account Name",
+   "read_only": 1
   },
   {
    "fieldname": "destination_bank_name",
    "fieldtype": "Data",
-   "label": "Destination Bank Name"
+   "label": "Destination Bank Name",
+   "read_only": 1
   },
   {
    "fieldname": "destination_bank_code",
    "fieldtype": "Data",
-   "label": "Destination Bank Code"
+   "label": "Destination Bank Code",
+   "read_only": 1
   },
   {
    "fieldname": "transaction_type",
    "fieldtype": "Select",
    "label": "Transaction Type",
-   "options": "INFLOW\nOUTFLOW"
+   "options": "INFLOW\nOUTFLOW",
+   "read_only": 1
   },
   {
    "fieldname": "status",
    "fieldtype": "Data",
-   "label": "Status"
+   "label": "Status",
+   "read_only": 1
   },
   {
    "fieldname": "narration",
    "fieldtype": "Small Text",
-   "label": "Narration"
+   "label": "Narration",
+   "read_only": 1
   },
   {
    "fieldname": "created_at",
    "fieldtype": "Data",
-   "label": "Created At"
+   "label": "Created At",
+   "read_only": 1
   },
   {
    "fieldname": "updated_at",
    "fieldtype": "Data",
-   "label": "Updated At"
+   "label": "Updated At",
+   "read_only": 1
   },
   {
    "fieldname": "metadata",
    "fieldtype": "Data",
-   "label": "Metadata"
+   "label": "Metadata",
+   "read_only": 1
   },
   {
    "fieldname": "data_details",
    "fieldtype": "Long Text",
-   "label": "Data Details"
+   "label": "Data Details",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-25 13:25:43.378951",
+ "modified": "2026-10-02 09:45:00.000000",
  "modified_by": "Administrator",
  "module": "Purpledove Payment",
  "name": "Purpledove Payment Log",
@@ -175,21 +198,34 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "role": "Accounts Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "print": 1,
+   "email": 1,
+   "role": "Accounts User"
   }
  ],
  "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "track_changes": 1
+ "track_changes": 1,
+ "allow_copy": 0
 }

@@ -1,7 +1,7 @@
 {
  "charts": [],
- "content": "[{\"id\":\"cS2lbEXk4z\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Purpledove Payment</span>\",\"col\":12}},{\"id\":\"7EQJXPLO93\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Virtual Wallet\",\"col\":3}},{\"id\":\"zCG7DmCqcR\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purpledove Payment Log\",\"col\":3}},{\"id\":\"QI0Hlkg29Y\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Virtual Payment\",\"col\":3}}]",
- "creation": "2025-08-28 07:24:47.036533",
+ "content": "[{\"id\":\"cS2lbEXk4z\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Purpledove Payment</span>\",\"col\":12}},{\"id\":\"7EQJXPLO93\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Virtual Wallet\",\"col\":3}},{\"id\":\"zCG7DmCqcR\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Purpledove Payment Log\",\"col\":3}},{\"id\":\"QI0Hlkg29Y\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Virtual Payment\",\"col\":3}},{\"id\":\"WLTSTMT01\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Wallet Statement\",\"col\":3}}]",
+ "creation": "2026-10-02 06:56:30.855271",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
@@ -12,7 +12,7 @@
  "is_hidden": 0,
  "label": "Purpledove Payment",
  "links": [],
- "modified": "2026-08-21 15:34:38.016749",
+ "modified": "2026-10-02 09:30:00",
  "modified_by": "Administrator",
  "module": "Purpledove Payment",
  "name": "Purpledove Payment",
@@ -22,7 +22,7 @@
  "public": 1,
  "quick_lists": [],
  "roles": [],
- "sequence_id": 23.0,
+ "sequence_id": 41.0,
  "shortcuts": [
   {
    "color": "Grey",
@@ -47,6 +47,13 @@
    "link_to": "Virtual Wallet",
    "stats_filter": "[]",
    "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "label": "Wallet Statement",
+   "link_to": "Wallet Statement of Account",
+   "stats_filter": "[]",
+   "type": "Report"
   }
  ],
  "title": "Purpledove Payment"

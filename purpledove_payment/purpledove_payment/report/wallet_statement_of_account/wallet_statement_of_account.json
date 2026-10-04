@@ -5,20 +5,20 @@
   {
    "fieldname": "date_time",
    "fieldtype": "Datetime",
-   "label": "Date",
-   "width": 140
-  },
-  {
-   "fieldname": "description",
-   "fieldtype": "Data",
-   "label": "Description",
-   "width": 420
+   "label": "Date / Time",
+   "width": 150
   },
   {
    "fieldname": "reference",
    "fieldtype": "Data",
    "label": "Reference",
-   "width": 230
+   "width": 140
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Data",
+   "label": "Narration",
+   "width": 320
   },
   {
    "fieldname": "status",
@@ -27,31 +27,22 @@
    "width": 100
   },
   {
-   "fieldname": "currency",
-   "fieldtype": "Data",
-   "label": "Currency",
-   "width": 0
-  },
-  {
    "fieldname": "debit",
    "fieldtype": "Currency",
    "label": "Debit",
-   "options": "currency",
    "width": 140
   },
   {
    "fieldname": "credit",
    "fieldtype": "Currency",
    "label": "Credit",
-   "options": "currency",
    "width": 140
   },
   {
    "fieldname": "balance",
    "fieldtype": "Currency",
    "label": "Balance",
-   "options": "currency",
-   "width": 160
+   "width": 150
   }
  ],
  "creation": "2026-10-02 06:56:31.067565",
@@ -81,18 +72,27 @@
    "label": "To Date",
    "mandatory": 1,
    "wildcard_filter": 0
+  },
+  {
+   "default": "Settled only",
+   "fieldname": "show",
+   "fieldtype": "Select",
+   "label": "Show",
+   "mandatory": 1,
+   "options": "Settled only\nAll events",
+   "wildcard_filter": 0
   }
  ],
  "idx": 0,
  "is_standard": "Yes",
  "letter_head": null,
- "modified": "2026-10-02 09:45:00.000000",
+ "modified": "2026-10-02 16:05:00.000000",
  "modified_by": "Administrator",
  "module": "Purpledove Payment",
  "name": "Wallet Statement of Account",
  "owner": "Administrator",
  "prepared_report": 0,
- "query": "WITH\nbase AS (\n    SELECT l.*\n    FROM `tabPurpledove Payment Log` l\n    WHERE l.account_number = (SELECT account_number FROM `tabVirtual Wallet` WHERE name = %(wallet)s)\n       OR l.source_account_number = (SELECT account_number FROM `tabVirtual Wallet` WHERE name = %(wallet)s)\n       OR l.destination_account_number = (SELECT account_number FROM `tabVirtual Wallet` WHERE name = %(wallet)s)\n),\npicked AS (\n    SELECT transaction_reference, event, MIN(creation) AS creation\n    FROM base\n    GROUP BY transaction_reference, event\n),\nev AS (\n    SELECT b.*\n    FROM base b\n    JOIN picked p\n      ON b.transaction_reference = p.transaction_reference\n     AND b.event = p.event\n     AND b.creation = p.creation\n),\nrunning AS (\n    SELECT\n        ev.*,\n        CASE WHEN ev.event = 'static_account.transaction.created' THEN ev.amount\n             WHEN ev.event = 'transfer.paid' THEN -ev.amount\n             ELSE 0 END AS sval,\n        (SELECT balance FROM `tabVirtual Wallet` WHERE name = %(wallet)s) AS cur_bal,\n        SUM(CASE WHEN ev.event = 'static_account.transaction.created' THEN ev.amount\n                 WHEN ev.event = 'transfer.paid' THEN -ev.amount ELSE 0 END)\n            OVER (ORDER BY ev.creation, ev.name ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum,\n        SUM(CASE WHEN ev.event = 'static_account.transaction.created' THEN ev.amount\n                 WHEN ev.event = 'transfer.paid' THEN -ev.amount ELSE 0 END)\n            OVER () AS total_net\n    FROM ev\n)\nSELECT\n    date_time, description, reference, status, currency, debit, credit, balance\nFROM (\n    SELECT CONCAT(%(from_date)s, ' 00:00:00') AS date_time,\n           CONCAT('Opening Balance as at ', %(from_date)s) AS description,\n           '' AS reference,\n           '' AS status,\n           'NGN' AS currency,\n           0 AS debit,\n           0 AS credit,\n           COALESCE(\n               (SELECT (SELECT cur_bal FROM running LIMIT 1)\n                       - (SELECT total_net FROM running LIMIT 1)\n                       + (SELECT COALESCE(SUM(sval), 0) FROM running WHERE creation < CONCAT(%(from_date)s, ' 00:00:00'))),\n               (SELECT balance FROM `tabVirtual Wallet` WHERE name = %(wallet)s)\n           ) AS balance,\n           1 AS sort_order\n    UNION ALL\n    SELECT r.creation AS date_time,\n           CASE\n               WHEN r.event = 'static_account.transaction.created' THEN\n                   CONCAT_WS(' - ',\n                       CONCAT('Credit from ', COALESCE(r.source_account_name, r.source_account_number, 'Unknown sender'),\n                              CASE WHEN r.source_bank_name IS NOT NULL AND r.source_bank_name != '' THEN CONCAT(' (', r.source_bank_name, ')') ELSE '' END),\n                               NULLIF(r.narration, ''))\n               WHEN r.event = 'transfer.failed' THEN\n                   CONCAT_WS(' - ',\n                       CONCAT('Failed transfer to ', COALESCE(r.destination_account_name, r.destination_account_number, 'Unknown beneficiary'),\n                              CASE WHEN r.destination_bank_name IS NOT NULL AND r.destination_bank_name != '' THEN CONCAT(' (', r.destination_bank_name, ')') ELSE '' END),\n                               NULLIF(r.narration, ''))\n               ELSE\n                   CONCAT_WS(' - ',\n                       CONCAT('Transfer to ', COALESCE(r.destination_account_name, r.destination_account_number, 'Unknown beneficiary'),\n                              CASE WHEN r.destination_bank_name IS NOT NULL AND r.destination_bank_name != '' THEN CONCAT(' (', r.destination_bank_name, ')') ELSE '' END),\n                               NULLIF(r.narration, ''))\n           END AS description,\n           r.transaction_reference AS reference,\n           r.status AS status,\n           'NGN' AS currency,\n           CASE WHEN r.sval < 0 THEN -r.sval ELSE 0 END AS debit,\n           CASE WHEN r.sval > 0 THEN r.sval ELSE 0 END AS credit,\n           r.cur_bal + r.cum - r.total_net AS balance,\n           2 AS sort_order\n    FROM running r\n    WHERE DATE(r.creation) BETWEEN %(from_date)s AND %(to_date)s\n    UNION ALL\n    SELECT CONCAT(%(to_date)s, ' 23:59:59') AS date_time,\n           CONCAT('Closing Balance as at ', %(to_date)s) AS description,\n           '' AS reference,\n           '' AS status,\n           'NGN' AS currency,\n           COALESCE(SUM(CASE WHEN r.sval < 0 THEN -r.sval ELSE 0 END), 0) AS debit,\n           COALESCE(SUM(CASE WHEN r.sval > 0 THEN r.sval ELSE 0 END), 0) AS credit,\n           (SELECT cur_bal FROM running LIMIT 1) AS balance,\n           3 AS sort_order\n    FROM running r\n    WHERE DATE(r.creation) BETWEEN %(from_date)s AND %(to_date)s\n) t\nORDER BY sort_order, date_time, reference",
+ "query": "WITH\nw AS (\n    SELECT account_number, COALESCE(balance, 0) AS balance\n    FROM `tabVirtual Wallet`\n    WHERE name = %(wallet)s\n),\nbase AS (\n    SELECT l.*\n    FROM `tabPurpledove Payment Log` l\n    JOIN w ON w.account_number IN (l.account_number, l.source_account_number, l.destination_account_number)\n),\npicked AS (\n    -- Webhooks can be delivered more than once; keep the first copy of each event\n    SELECT transaction_reference, event, MIN(creation) AS creation\n    FROM base\n    GROUP BY transaction_reference, event\n),\nsigned AS (\n    SELECT b.*,\n           CASE WHEN b.event = 'static_account.transaction.created' THEN b.amount\n                WHEN b.event = 'transfer.paid' THEN -b.amount\n                ELSE 0 END AS sval\n    FROM base b\n    JOIN picked p\n      ON b.transaction_reference = p.transaction_reference\n     AND b.event = p.event\n     AND b.creation = p.creation\n),\nrunning AS (\n    SELECT signed.*,\n           SUM(sval) OVER (ORDER BY creation, name ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum\n    FROM signed\n),\ntotals AS (\n    -- The wallet balance is live, so every historical balance is derived backwards from it:\n    -- balance before any logged event = current balance - net of all logged events\n    SELECT w.balance - COALESCE(SUM(r.sval), 0) AS start_bal,\n           COALESCE(SUM(CASE WHEN DATE(r.creation) < %(from_date)s THEN r.sval END), 0) AS net_before,\n           COALESCE(SUM(CASE WHEN DATE(r.creation) <= %(to_date)s THEN r.sval END), 0) AS net_to_end\n    FROM w LEFT JOIN running r ON 1 = 1\n    GROUP BY w.balance\n)\n-- Ledger layout: opening balance, then the transactions. Period totals and the closing\n-- balance are shown in the account summary above the ledger, not as rows.\n-- sort_* columns order the rows but are not part of the output.\nSELECT date_time, reference, description, status, debit, credit, balance\nFROM (\n    SELECT CONCAT(%(from_date)s, ' 00:00:00') AS date_time,\n           '' AS reference,\n           'Opening Balance' AS description,\n           '' AS status,\n           NULL AS debit,\n           NULL AS credit,\n           t.start_bal + t.net_before AS balance,\n           1 AS sort_order, CONCAT(%(from_date)s, ' 00:00:00') AS sort_ts, '' AS sort_name\n    FROM totals t\n    UNION ALL\n    SELECT r.creation AS date_time,\n           r.transaction_reference AS reference,\n           CONCAT_WS(' - ',\n               CASE\n               WHEN r.event = 'static_account.transaction.created' THEN\n                   CONCAT('Credit from ', COALESCE(NULLIF(r.source_account_name, ''), NULLIF(r.source_account_number, ''), 'Unknown sender'),\n                          CASE WHEN COALESCE(r.source_bank_name, '') != '' THEN CONCAT(' (', r.source_bank_name, ')') ELSE '' END)\n               ELSE\n                   CONCAT('Transfer to ', COALESCE(NULLIF(r.destination_account_name, ''), NULLIF(r.destination_account_number, ''), 'Unknown beneficiary'),\n                          CASE WHEN COALESCE(r.destination_bank_name, '') != '' THEN CONCAT(' (', r.destination_bank_name, ')') ELSE '' END)\n           END,\n               NULLIF(r.narration, '')\n           ) AS description,\n           CONCAT(UPPER(LEFT(r.status, 1)), LOWER(SUBSTRING(r.status, 2))) AS status,\n           CASE WHEN r.sval < 0 THEN -r.sval END AS debit,\n           CASE WHEN r.sval > 0 THEN r.sval END AS credit,\n           t.start_bal + r.cum AS balance,\n           2 AS sort_order, r.creation AS sort_ts, r.name AS sort_name\n    FROM running r CROSS JOIN totals t\n    WHERE DATE(r.creation) BETWEEN %(from_date)s AND %(to_date)s\n      AND (%(show)s = 'All events' OR r.sval != 0)\n) x\nORDER BY sort_order, sort_ts, sort_name",
  "ref_doctype": "Purpledove Payment Log",
  "report_name": "Wallet Statement of Account",
  "report_type": "Query Report",
